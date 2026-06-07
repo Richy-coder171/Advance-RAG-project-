@@ -1,0 +1,12 @@
+streamlit
+langchain
+langchain-groq
+langchain-openai
+langchain-ollama
+langchain-chroma
+langchain-community
+chromadb
+langsmith
+pypdf
+pandas
+python-dotenv

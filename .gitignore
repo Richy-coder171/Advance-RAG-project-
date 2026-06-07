@@ -1,0 +1,9 @@
+﻿.env
+.streamlit/secrets.toml
+chroma_*_store/
+langchain-rag-nxtwave-main/chroma_hr_store/
+langchain-rag-nxtwave-main/chroma_hr_temp_store/
+langchain-rag-nxtwave-main/submissions/
+langchain-rag-nxtwave-main/*.sources.json
+__pycache__/
+*.pyc
