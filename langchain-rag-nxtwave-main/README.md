@@ -9,6 +9,7 @@ This project is set up for the Kaggle InClass HR Help Desk assignment. It builds
 - `generate_submission.py`: batch runner that reads Kaggle questions and writes `submission.csv`.
 - `hr_docs/`: place the official Zyro Dynamics HR policy documents here.
 - `.env.example`: safe template for API keys and tracing settings.
+- `TECHNICAL_README.md`: architecture, LangChain components, LLM options, vector database, chain design, and visual diagrams.
 
 ## Setup
 
