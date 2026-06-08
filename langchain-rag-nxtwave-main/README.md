@@ -10,6 +10,7 @@ This project is set up for the Kaggle InClass HR Help Desk assignment. It builds
 - `hr_docs/`: place the official Zyro Dynamics HR policy documents here.
 - `.env.example`: safe template for API keys and tracing settings.
 - `TECHNICAL_README.md`: architecture, LangChain components, LLM options, vector database, chain design, and visual diagrams.
+- `EVALUATION_REPORT.md`: mapped evaluation findings and remaining competition-readiness work.
 
 ## Setup
 
