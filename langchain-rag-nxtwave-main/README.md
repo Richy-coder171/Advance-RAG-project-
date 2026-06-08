@@ -33,6 +33,8 @@ The pipeline auto-selects providers:
 - If `GROQ_API_KEY` exists, Groq is used for generation.
 - If no API keys exist, local hash embeddings and extractive answers keep the pipeline runnable offline.
 
+If OpenAI returns a quota error for embeddings, select `hash` or `ollama` in the Streamlit **Embeddings** dropdown and click **Rebuild Index**. The Python pipeline also falls back to local hash embeddings when an embedding provider fails during indexing or retrieval.
+
 ## Add HR Policy Documents
 
 Put the official Zyro Dynamics policy files in `hr_docs/`.
@@ -94,3 +96,6 @@ Tune against a small validation set before submitting:
 ## Original Lab Files
 
 The previous API documentation assistant is still available as `streamlit_api_assistant.py` and `Handson_lab1.ipynb`.
+
+cd "D:\kaggle project\langchain-rag-nxtwave\langchain-rag-nxtwave-main"
+python -m streamlit run streamlit_hr_helpdesk.py

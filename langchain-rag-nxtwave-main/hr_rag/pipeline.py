@@ -387,7 +387,18 @@ class HRRagPipeline:
                 fetch_k=max(fetch_k, 24),
             )
         except Exception:
-            vector_docs = self.vectorstore.similarity_search(question, k=min(fetch_k, 24))
+            try:
+                vector_docs = self.vectorstore.similarity_search(question, k=min(fetch_k, 24))
+            except Exception:
+                self.vectorstore = InMemoryVectorStore.from_documents(
+                    self.chunks,
+                    LocalHashEmbeddings(dim=int(os.getenv("HASH_EMBEDDING_DIM", "768"))),
+                )
+                vector_docs = self.vectorstore.max_marginal_relevance_search(
+                    question,
+                    k=min(fetch_k, max(self.config.retrieval_k, 12)),
+                    fetch_k=max(fetch_k, 24),
+                )
 
         for rank, doc in enumerate(vector_docs):
             key = doc_key(doc)
@@ -612,7 +623,7 @@ def build_vectorstore(
             )
         except Exception:
             pass
-    return InMemoryVectorStore.from_documents(chunks, embeddings)
+    return build_memory_vectorstore_with_fallback(chunks, embeddings)
 
 
 def load_vectorstore_or_memory(
@@ -630,7 +641,18 @@ def load_vectorstore_or_memory(
             )
         except Exception:
             pass
-    return InMemoryVectorStore.from_documents(chunks, embeddings)
+    return build_memory_vectorstore_with_fallback(chunks, embeddings)
+
+
+def build_memory_vectorstore_with_fallback(
+    chunks: Sequence[Document],
+    embeddings: Embeddings,
+) -> InMemoryVectorStore:
+    try:
+        return InMemoryVectorStore.from_documents(chunks, embeddings)
+    except Exception:
+        hash_embeddings = LocalHashEmbeddings(dim=int(os.getenv("HASH_EMBEDDING_DIM", "768")))
+        return InMemoryVectorStore.from_documents(chunks, hash_embeddings)
 
 
 def build_chat_model(provider: str = "auto", temperature: float = 0.0):
