@@ -23,7 +23,10 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 try:
     from langchain.chains.combine_documents import create_stuff_documents_chain
 except Exception:  # pragma: no cover - optional in older/minimal installs
-    create_stuff_documents_chain = None
+    try:
+        from langchain_classic.chains.combine_documents import create_stuff_documents_chain
+    except Exception:  # pragma: no cover - optional in minimal installs
+        create_stuff_documents_chain = None
 
 try:
     from langchain_chroma import Chroma
@@ -161,6 +164,28 @@ class HRRagConfig:
     fetch_k: int = 24
     temperature: float = 0.0
     max_context_chars_per_chunk: int = 1800
+    vector_weight: float = 0.6
+    keyword_weight: float = 0.4
+    rrf_k: int = 60
+    min_confidence: float = 0.35
+    min_retrieved_chunks: int = 2
+    enable_hyde: bool = True
+    enable_self_critique: bool = True
+    critique_confidence_threshold: float = 0.65
+    append_source_block: bool = True
+
+    def __post_init__(self) -> None:
+        self.vector_weight = max(0.0, min(1.0, self.vector_weight))
+        self.keyword_weight = max(0.0, min(1.0, self.keyword_weight))
+        total_weight = self.vector_weight + self.keyword_weight
+        if total_weight <= 0:
+            self.vector_weight, self.keyword_weight = 0.6, 0.4
+        else:
+            self.vector_weight /= total_weight
+            self.keyword_weight /= total_weight
+        self.min_confidence = max(0.0, min(1.0, self.min_confidence))
+        self.critique_confidence_threshold = max(0.0, min(1.0, self.critique_confidence_threshold))
+        self.min_retrieved_chunks = max(1, self.min_retrieved_chunks)
 
 
 @dataclass
@@ -170,6 +195,10 @@ class HRRagResponse:
     blocked: bool = False
     reason: Optional[str] = None
     retrieved_context: str = ""
+    avg_confidence: float = 0.0
+    used_hyde: bool = False
+    refined: bool = False
+    critique_rating: Optional[str] = None
 
 
 class LocalHashEmbeddings(Embeddings):
@@ -341,7 +370,12 @@ class HRRagPipeline:
         llm = build_chat_model(cfg.llm_provider, cfg.temperature)
         return cls(cfg, vectorstore, chunks, llm=llm)
 
-    def answer(self, question: str, chat_history: Optional[Sequence[Tuple[str, str]]] = None) -> HRRagResponse:
+    def answer(
+        self,
+        question: str,
+        chat_history: Optional[Sequence[Tuple[str, str]]] = None,
+        force_refine: bool = False,
+    ) -> HRRagResponse:
         guard_ok, reason = self._guardrail(question)
         if not guard_ok:
             return HRRagResponse(
@@ -364,62 +398,123 @@ class HRRagPipeline:
 
         context = self.format_context(docs)
         sources = source_dicts(docs)
+        avg_confidence = average_confidence(docs)
+        used_hyde = any(bool(doc.metadata.get("used_hyde")) for doc in docs)
+        refined = False
+        critique_rating = None
 
         if self.llm is None:
             answer = self._extractive_answer(question, docs)
         else:
             answer = self._llm_answer(question, docs, context, chat_history or [])
+            should_refine = self.config.enable_self_critique and (
+                force_refine or avg_confidence < self.config.critique_confidence_threshold
+            )
+            if should_refine:
+                answer, critique_rating = self._self_critique(question, context, answer)
+                refined = True
+
+        if self.config.append_source_block:
+            answer = append_citation_block(answer, sources)
 
         return HRRagResponse(
             answer=answer.strip(),
             sources=sources,
             retrieved_context=context,
+            avg_confidence=avg_confidence,
+            used_hyde=used_hyde,
+            refined=refined,
+            critique_rating=critique_rating,
         )
 
     def retrieve(self, question: str) -> List[Document]:
         fetch_k = max(self.config.fetch_k, self.config.retrieval_k)
-        candidates: Dict[str, Tuple[Document, float]] = {}
+        vector_query, used_hyde = self._retrieval_query(question)
 
         try:
             vector_docs = self.vectorstore.max_marginal_relevance_search(
-                question,
+                vector_query,
                 k=min(fetch_k, max(self.config.retrieval_k, 12)),
                 fetch_k=max(fetch_k, 24),
             )
         except Exception:
             try:
-                vector_docs = self.vectorstore.similarity_search(question, k=min(fetch_k, 24))
+                vector_docs = self.vectorstore.similarity_search(vector_query, k=min(fetch_k, 24))
             except Exception:
                 self.vectorstore = InMemoryVectorStore.from_documents(
                     self.chunks,
                     LocalHashEmbeddings(dim=int(os.getenv("HASH_EMBEDDING_DIM", "768"))),
                 )
                 vector_docs = self.vectorstore.max_marginal_relevance_search(
-                    question,
+                    vector_query,
                     k=min(fetch_k, max(self.config.retrieval_k, 12)),
                     fetch_k=max(fetch_k, 24),
                 )
 
-        for rank, doc in enumerate(vector_docs):
-            key = doc_key(doc)
-            candidates[key] = (doc, candidates.get(key, (doc, 0.0))[1] + 1.0 / (rank + 1))
+        keyword_docs = [doc for doc, _score in self.keyword_index.search(question, fetch_k)]
+        fused = weighted_reciprocal_rank_fusion(
+            ranked_lists=[
+                ("vector_mmr_hyde" if used_hyde else "vector_mmr", vector_docs, self.config.vector_weight),
+                ("bm25", keyword_docs, self.config.keyword_weight),
+            ],
+            rrf_k=self.config.rrf_k,
+        )
 
-        for rank, (doc, lexical_score) in enumerate(self.keyword_index.search(question, fetch_k)):
-            key = doc_key(doc)
-            rank_score = 0.85 / (rank + 1)
-            combined = candidates.get(key, (doc, 0.0))[1] + rank_score + min(lexical_score / 20.0, 0.5)
-            candidates[key] = (doc, combined)
+        selected: List[Document] = []
+        for retrieval_rank, (doc, score, confidence, methods) in enumerate(fused, start=1):
+            if confidence < self.config.min_confidence and len(selected) >= self.config.min_retrieved_chunks:
+                continue
+            selected.append(
+                Document(
+                    page_content=doc.page_content,
+                    metadata={
+                        **doc.metadata,
+                        "retrieval_rank": retrieval_rank,
+                        "retrieval_score": round(score, 6),
+                        "retrieval_confidence": round(confidence, 4),
+                        "retrieval_methods": ", ".join(methods),
+                        "used_hyde": used_hyde,
+                    },
+                )
+            )
+            if len(selected) >= self.config.retrieval_k:
+                break
+        return selected
 
-        ranked = sorted(candidates.values(), key=lambda item: item[1], reverse=True)
-        return [doc for doc, _score in ranked[: self.config.retrieval_k]]
+    def _retrieval_query(self, question: str) -> Tuple[str, bool]:
+        if not self.config.enable_hyde or self.llm is None or not is_vague_query(question):
+            return question, False
+
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                (
+                    "system",
+                    (
+                        "Write a short hypothetical passage that could appear in an internal HR policy "
+                        "and would help retrieve the answer to the employee question. Use likely policy "
+                        "terminology, but do not invent numbers, dates, benefit amounts, or company-specific facts."
+                    ),
+                ),
+                ("human", "{question}"),
+            ]
+        )
+        try:
+            rewritten = (prompt | self.llm | StrOutputParser()).invoke({"question": question}).strip()
+            return (rewritten or question), bool(rewritten)
+        except Exception:
+            return question, False
 
     def format_context(self, docs: Sequence[Document]) -> str:
         parts = []
         for doc in docs:
             source = doc.metadata.get("source_file", doc.metadata.get("source", "unknown"))
             chunk_id = doc.metadata.get("chunk_id", "n/a")
+            confidence = float(doc.metadata.get("retrieval_confidence", 0.0))
             text = clean_text(doc.page_content)[: self.config.max_context_chars_per_chunk]
-            parts.append("Source: %s | chunk %s\n%s" % (source, chunk_id, text))
+            parts.append(
+                "Source: %s | chunk %s | confidence %.2f\n%s"
+                % (source, chunk_id, confidence, text)
+            )
         return "\n\n---\n\n".join(parts)
 
     def _llm_answer(
@@ -502,6 +597,34 @@ class HRRagPipeline:
         for _score, source, chunk_id, sentence in selected:
             lines.append("- %s [%s chunk %s]" % (sentence, source, chunk_id))
         return "\n".join(lines)
+
+    def _self_critique(self, question: str, context: str, draft: str) -> Tuple[str, Optional[str]]:
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                (
+                    "system",
+                    (
+                        "You are a strict HR RAG answer reviewer. Check the draft only against the supplied "
+                        "policy context. Do not add unsupported facts. Return exactly two sections:\n"
+                        "RATING: COMPLETE, PARTIAL, or MISSING\n"
+                        "REFINED ANSWER: a concise grounded answer with source citations."
+                    ),
+                ),
+                (
+                    "human",
+                    "Question: {question}\n\nPolicy context:\n{context}\n\nDraft answer:\n{draft}",
+                ),
+            ]
+        )
+        try:
+            output = (prompt | self.llm | StrOutputParser()).invoke(
+                {"question": question, "context": context, "draft": draft}
+            )
+            rating = parse_section(output, "RATING:")
+            refined = parse_section(output, "REFINED ANSWER:")
+            return (refined or draft), (rating or None)
+        except Exception:
+            return draft, None
 
     def _guardrail(self, question: str) -> Tuple[bool, Optional[str]]:
         q = (question or "").strip()
@@ -775,6 +898,9 @@ def source_dicts(docs: Sequence[Document]) -> List[Dict[str, str]]:
                 "source_file": source,
                 "chunk_id": chunk_id,
                 "file_type": str(doc.metadata.get("file_type", "")),
+                "confidence": "%.2f" % float(doc.metadata.get("retrieval_confidence", 0.0)),
+                "retrieval_rank": str(doc.metadata.get("retrieval_rank", "")),
+                "retrieval_methods": str(doc.metadata.get("retrieval_methods", "")),
                 "preview": clean_text(doc.page_content)[:240],
             }
         )
@@ -807,3 +933,88 @@ def split_sentences(text: str) -> Iterable[str]:
 def cosine_similarity(left: Sequence[float], right: Sequence[float]) -> float:
     denom = (math.sqrt(sum(v * v for v in left)) or 1.0) * (math.sqrt(sum(v * v for v in right)) or 1.0)
     return sum(a * b for a, b in zip(left, right)) / denom
+
+
+def weighted_reciprocal_rank_fusion(
+    ranked_lists: Sequence[Tuple[str, Sequence[Document], float]],
+    rrf_k: int = 60,
+) -> List[Tuple[Document, float, float, List[str]]]:
+    candidates: Dict[str, Dict[str, object]] = {}
+    active_weight = sum(weight for _name, docs, weight in ranked_lists if docs)
+    ideal_score = active_weight / max(1, rrf_k + 1)
+
+    for method, docs, weight in ranked_lists:
+        for rank, doc in enumerate(docs, start=1):
+            key = doc_key(doc)
+            entry = candidates.setdefault(key, {"doc": doc, "score": 0.0, "methods": []})
+            entry["score"] = float(entry["score"]) + weight / (rrf_k + rank)
+            methods = entry["methods"]
+            if isinstance(methods, list) and method not in methods:
+                methods.append(method)
+
+    ranked = sorted(candidates.values(), key=lambda entry: float(entry["score"]), reverse=True)
+    return [
+        (
+            entry["doc"],
+            float(entry["score"]),
+            min(1.0, float(entry["score"]) / ideal_score) if ideal_score else 0.0,
+            list(entry["methods"]),
+        )
+        for entry in ranked
+    ]
+
+
+def is_vague_query(question: str) -> bool:
+    normalized = clean_text(question).lower()
+    tokens = tokenize(normalized)
+    vague_phrases = {
+        "how do i start",
+        "what do i do",
+        "how does it work",
+        "tell me about it",
+        "help me with this",
+        "what about this",
+        "can i do this",
+        "how can i do this",
+        "what is the policy",
+    }
+    if any(phrase in normalized for phrase in vague_phrases):
+        return True
+
+    specific_terms = HR_KEYWORDS - {"hr", "employee", "employment", "policy", "manager", "department"}
+    has_specific_term = any(term in normalized for term in specific_terms)
+    return len(tokens) <= 5 and not has_specific_term
+
+
+def average_confidence(docs: Sequence[Document]) -> float:
+    if not docs:
+        return 0.0
+    values = [float(doc.metadata.get("retrieval_confidence", 0.0)) for doc in docs]
+    return round(sum(values) / len(values), 4)
+
+
+def append_citation_block(answer: str, sources: Sequence[Dict[str, str]]) -> str:
+    if not sources or "\n\nSources:\n" in answer:
+        return answer
+    lines = ["", "Sources:"]
+    for source in sources:
+        lines.append(
+            "- [%s chunk %s] confidence=%s, methods=%s: %s"
+            % (
+                source["source_file"],
+                source["chunk_id"],
+                source.get("confidence", "0.00"),
+                source.get("retrieval_methods", ""),
+                source["preview"],
+            )
+        )
+    return answer.rstrip() + "\n" + "\n".join(lines)
+
+
+def parse_section(text: str, label: str) -> str:
+    if label not in text:
+        return ""
+    content = text.split(label, 1)[1]
+    if label == "RATING:" and "REFINED ANSWER:" in content:
+        content = content.split("REFINED ANSWER:", 1)[0]
+    return content.strip()

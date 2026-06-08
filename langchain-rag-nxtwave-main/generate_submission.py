@@ -79,6 +79,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--chunk-overlap", type=int, default=180)
     parser.add_argument("--retrieval-k", type=int, default=6)
     parser.add_argument("--fetch-k", type=int, default=24)
+    parser.add_argument("--vector-weight", type=float, default=0.6, help="RRF vector/MMR weight; BM25 uses 1-weight.")
+    parser.add_argument("--min-confidence", type=float, default=0.35, help="Minimum normalized RRF confidence.")
+    parser.add_argument("--critique-threshold", type=float, default=0.65, help="Refine answers below this confidence.")
+    parser.add_argument("--disable-hyde", action="store_true", help="Disable conditional HyDE query rewriting.")
+    parser.add_argument("--disable-self-critique", action="store_true", help="Disable batch answer refinement.")
+    parser.add_argument("--no-source-block", action="store_true", help="Do not append detailed citations to answers.")
     parser.add_argument("--rebuild", action="store_true", help="Rebuild vector index before answering.")
     return parser.parse_args()
 
@@ -98,15 +104,33 @@ def main() -> None:
         chunk_overlap=args.chunk_overlap,
         retrieval_k=args.retrieval_k,
         fetch_k=args.fetch_k,
+        vector_weight=args.vector_weight,
+        keyword_weight=1.0 - args.vector_weight,
+        min_confidence=args.min_confidence,
+        enable_hyde=not args.disable_hyde,
+        enable_self_critique=not args.disable_self_critique,
+        critique_confidence_threshold=args.critique_threshold,
+        append_source_block=not args.no_source_block,
     )
     pipeline = HRRagPipeline.from_config(config, rebuild=args.rebuild)
 
     answers = []
     source_logs = []
     for idx, question in enumerate(questions_df[question_column].fillna("").astype(str), start=1):
-        response = pipeline.answer(question)
+        response = pipeline.answer(question, force_refine=not args.disable_self_critique)
         answers.append(response.answer)
-        source_logs.append({"row": idx, "question": question, "sources": response.sources, "blocked": response.blocked})
+        source_logs.append(
+            {
+                "row": idx,
+                "question": question,
+                "sources": response.sources,
+                "blocked": response.blocked,
+                "avg_confidence": response.avg_confidence,
+                "used_hyde": response.used_hyde,
+                "refined": response.refined,
+                "critique_rating": response.critique_rating,
+            }
+        )
         print("[%s/%s] answered" % (idx, len(questions_df)))
 
     output_df = build_output_frame(

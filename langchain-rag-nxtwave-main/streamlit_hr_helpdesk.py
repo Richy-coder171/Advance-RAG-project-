@@ -23,6 +23,7 @@ st.markdown(
   margin-bottom: 8px;
 }
 .source-title { font-weight: 650; color: #172033; }
+.source-meta { color: #245a3a; font-size: 12px; margin-top: 3px; }
 .source-preview { color: #526070; font-size: 13px; margin-top: 4px; }
 </style>
 """,
@@ -40,6 +41,13 @@ def make_config() -> HRRagConfig:
         chunk_overlap=int(st.session_state.get("chunk_overlap", 180)),
         retrieval_k=int(st.session_state.get("retrieval_k", 6)),
         fetch_k=int(st.session_state.get("fetch_k", 24)),
+        vector_weight=float(st.session_state.get("vector_weight", 0.6)),
+        keyword_weight=1.0 - float(st.session_state.get("vector_weight", 0.6)),
+        min_confidence=float(st.session_state.get("min_confidence", 0.35)),
+        enable_hyde=bool(st.session_state.get("enable_hyde", True)),
+        enable_self_critique=bool(st.session_state.get("enable_self_critique", True)),
+        critique_confidence_threshold=float(st.session_state.get("critique_confidence_threshold", 0.65)),
+        append_source_block=bool(st.session_state.get("append_source_block", True)),
     )
 
 
@@ -71,6 +79,28 @@ with st.sidebar:
     st.session_state.chunk_overlap = st.slider("Chunk overlap", 50, 400, int(st.session_state.get("chunk_overlap", 180)), 25)
     st.session_state.retrieval_k = st.slider("Retrieved chunks", 3, 10, int(st.session_state.get("retrieval_k", 6)), 1)
     st.session_state.fetch_k = st.slider("Candidate chunks", 10, 60, int(st.session_state.get("fetch_k", 24)), 2)
+    st.session_state.vector_weight = st.slider(
+        "Vector retrieval weight", 0.0, 1.0, float(st.session_state.get("vector_weight", 0.6)), 0.05
+    )
+    st.session_state.min_confidence = st.slider(
+        "Minimum confidence", 0.0, 1.0, float(st.session_state.get("min_confidence", 0.35)), 0.05
+    )
+    st.session_state.enable_hyde = st.toggle(
+        "Conditional HyDE", value=bool(st.session_state.get("enable_hyde", True))
+    )
+    st.session_state.enable_self_critique = st.toggle(
+        "Low-confidence refinement", value=bool(st.session_state.get("enable_self_critique", True))
+    )
+    st.session_state.critique_confidence_threshold = st.slider(
+        "Refinement threshold",
+        0.0,
+        1.0,
+        float(st.session_state.get("critique_confidence_threshold", 0.65)),
+        0.05,
+    )
+    st.session_state.append_source_block = st.toggle(
+        "Detailed citations", value=bool(st.session_state.get("append_source_block", True))
+    )
 
     rebuild = st.button("Rebuild Index", use_container_width=True)
     st.caption("Secrets are read from `.env`, environment variables, or Streamlit secrets.")
@@ -83,6 +113,9 @@ if "messages" not in st.session_state:
 
 if "last_sources" not in st.session_state:
     st.session_state.last_sources = []
+
+if "last_run" not in st.session_state:
+    st.session_state.last_run = {}
 
 cfg = make_config()
 
@@ -122,6 +155,11 @@ with left:
 
             st.session_state.messages.append({"role": "assistant", "content": response.answer})
             st.session_state.last_sources = response.sources
+            st.session_state.last_run = {
+                "confidence": response.avg_confidence,
+                "hyde": response.used_hyde,
+                "refined": response.refined,
+            }
 
 with right:
     st.subheader("Retrieved Sources")
@@ -131,12 +169,15 @@ with right:
         st.markdown(
             """
 <div class="source-box">
-  <div class="source-title">{source_file} · chunk {chunk_id}</div>
+  <div class="source-title">{source_file} - chunk {chunk_id}</div>
+  <div class="source-meta">confidence {confidence} - {retrieval_methods}</div>
   <div class="source-preview">{preview}</div>
 </div>
             """.format(
                 source_file=escape(source["source_file"]),
                 chunk_id=escape(source["chunk_id"]),
+                confidence=escape(source.get("confidence", "0.00")),
+                retrieval_methods=escape(source.get("retrieval_methods", "")),
                 preview=escape(source["preview"]),
             ),
             unsafe_allow_html=True,
@@ -148,8 +189,13 @@ with right:
     st.metric("Policy files", file_count)
     st.metric("LLM provider", os.getenv("LLM_PROVIDER", cfg.llm_provider))
     st.metric("Embedding provider", os.getenv("EMBEDDING_PROVIDER", cfg.embedding_provider))
+    if st.session_state.last_run:
+        st.metric("Average confidence", "%.2f" % st.session_state.last_run["confidence"])
+        st.metric("HyDE used", "yes" if st.session_state.last_run["hyde"] else "no")
+        st.metric("Refined", "yes" if st.session_state.last_run["refined"] else "no")
 
     if st.button("Clear Chat", use_container_width=True):
         st.session_state.messages = []
         st.session_state.last_sources = []
+        st.session_state.last_run = {}
         st.rerun()

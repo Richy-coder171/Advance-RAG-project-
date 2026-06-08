@@ -33,6 +33,10 @@ The HR Help Desk solution uses these core retrieval and generation components:
 | Stuff Documents Chain | Yes | `create_stuff_documents_chain()` stuffs retrieved policy chunks into the answer prompt |
 | Hybrid Retrieval | Yes | Chroma vector retrieval is fused with BM25-style keyword retrieval |
 | MMR Retrieval | Yes | `max_marginal_relevance_search()` improves diversity before final reranking |
+| Weighted Reciprocal Rank Fusion | Yes | Merges MMR vector and BM25 ranked lists with configurable 60/40 weights |
+| Conditional HyDE | Yes | Rewrites only vague/short queries before vector retrieval |
+| Confidence + Detailed Citations | Yes | Adds normalized fusion confidence, methods, file, chunk ID, and preview |
+| Conditional Self-Critique | Yes | Refines low-confidence answers and batch submission answers |
 
 ## LLM Options
 
@@ -116,6 +120,36 @@ The retriever uses a hybrid approach:
 
 This matters because HR questions often contain exact terms such as leave type, benefit name, notice period, payroll, probation, or reimbursement.
 
+### Weighted Reciprocal Rank Fusion
+
+The implementation uses weighted Reciprocal Rank Fusion instead of directly adding incomparable raw vector and BM25 scores:
+
+```text
+RRF score = sum(weight / (rrf_k + rank))
+```
+
+Default weights:
+
+```text
+MMR vector retrieval = 0.60
+BM25 keyword retrieval = 0.40
+rrf_k = 60
+```
+
+The final confidence value is a normalized RRF fusion confidence between `0.0` and `1.0`. It is a retrieval-ranking confidence, not a calibrated probability that the answer is factually correct.
+
+### Conditional HyDE
+
+HyDE runs only when the question is short and lacks a specific HR policy term, or matches a vague phrase such as `How do I start?`.
+
+The hypothetical passage is used only for vector retrieval. BM25 continues searching with the employee's original question. HyDE is skipped when no LLM is configured.
+
+### Conditional Self-Critique
+
+Interactive answers are refined only when average retrieval confidence is below the configured threshold. Batch submissions request refinement by default because answer quality matters more than latency during submission generation.
+
+The reviewer receives the same retrieved context and must return a grounded refined answer without adding unsupported policy facts.
+
 ## LangChain Chains Used
 
 The HR assistant uses a fixed RAG chain rather than a dynamic agent.
@@ -185,12 +219,14 @@ flowchart TD
     E --> L[Hybrid Retrieval]
     J --> L
     K --> L
-    L --> M[MMR + Score Fusion]
-    M --> N[Top K Policy Chunks]
+    L --> M[Weighted RRF Fusion]
+    M --> N[Confidence Filter + Top K Chunks]
     N --> O[Grounded Prompt Template]
-    O --> P[LLM<br/>Groq Llama / OpenAI / Ollama]
-    P --> Q[Answer + Citations]
-    Q --> B
+    O --> P[Stuff Documents Chain]
+    P --> Q[LLM<br/>Groq Llama / OpenAI / Ollama]
+    Q --> R[Conditional Self-Critique]
+    R --> S[Answer + Detailed Citations]
+    S --> B
 ```
 
 ## Batch Submission Architecture
@@ -249,6 +285,10 @@ chunk_size = 900
 chunk_overlap = 180
 retrieval_k = 6
 fetch_k = 24
+vector_weight = 0.60
+keyword_weight = 0.40
+min_confidence = 0.35
+critique_confidence_threshold = 0.65
 embedding_provider = openai or ollama
 llm_provider = groq or openai
 ```
@@ -258,6 +298,8 @@ Then tune:
 - `chunk_size`: try `700`, `900`, `1100`
 - `retrieval_k`: try `5`, `6`, `8`
 - `fetch_k`: try `24`, `36`, `48`
+- `vector_weight`: try `0.50`, `0.60`, `0.70`
+- `min_confidence`: tune only against a labeled validation set
 - Inspect `.sources.json` after each batch run to see whether the correct policy chunks were retrieved.
 
 ## Design Summary

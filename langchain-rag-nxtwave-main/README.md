@@ -35,6 +35,8 @@ The pipeline auto-selects providers:
 
 If OpenAI returns a quota error for embeddings, select `hash` or `ollama` in the Streamlit **Embeddings** dropdown and click **Rebuild Index**. The Python pipeline also falls back to local hash embeddings when an embedding provider fails during indexing or retrieval.
 
+The enhanced retrieval path uses MMR vector retrieval, BM25 keyword retrieval, weighted Reciprocal Rank Fusion, normalized fusion confidence, conditional HyDE for vague queries, and conditional self-critique for low-confidence or batch answers.
+
 ## Add HR Policy Documents
 
 Put the official Zyro Dynamics policy files in `hr_docs/`.
@@ -82,6 +84,21 @@ If no model API is available:
 ```bash
 python generate_submission.py --docs-path hr_docs --questions test.csv --output submission.csv --embedding-provider hash --llm-provider extractive --rebuild
 ```
+
+Useful enhanced-pipeline flags:
+
+```bash
+python generate_submission.py \
+  --docs-path hr_docs \
+  --questions test.csv \
+  --output submission.csv \
+  --vector-weight 0.6 \
+  --min-confidence 0.35 \
+  --critique-threshold 0.65 \
+  --rebuild
+```
+
+Batch answers use self-critique by default. Use `--disable-self-critique`, `--disable-hyde`, or `--no-source-block` for faster experiments.
 
 ## Leaderboard Strategy
 

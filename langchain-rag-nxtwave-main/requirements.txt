@@ -1,5 +1,6 @@
 streamlit
 langchain
+langchain-classic
 langchain-groq
 langchain-openai
 langchain-ollama
