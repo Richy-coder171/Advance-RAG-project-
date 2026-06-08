@@ -16,9 +16,14 @@ from xml.etree import ElementTree
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.prompts import ChatPromptTemplate, PromptTemplate
 from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+try:
+    from langchain.chains.combine_documents import create_stuff_documents_chain
+except Exception:  # pragma: no cover - optional in older/minimal installs
+    create_stuff_documents_chain = None
 
 try:
     from langchain_chroma import Chroma
@@ -35,6 +40,31 @@ except Exception:  # pragma: no cover - optional dependency
 
 if load_dotenv is not None:
     load_dotenv()
+
+
+def load_environment() -> None:
+    """Load .env files from common local run locations without overriding shell env."""
+    if load_dotenv is None:
+        return
+
+    candidates = [Path.cwd() / ".env"]
+    current = Path(__file__).resolve()
+    candidates.extend(parent / ".env" for parent in current.parents)
+
+    seen = set()
+    for path in candidates:
+        if path in seen:
+            continue
+        seen.add(path)
+        if path.exists():
+            load_dotenv(path, override=False)
+
+    # LangSmith has used both env names across LangChain versions.
+    if os.getenv("LANGCHAIN_API_KEY") and not os.getenv("LANGSMITH_API_KEY"):
+        os.environ["LANGSMITH_API_KEY"] = os.getenv("LANGCHAIN_API_KEY", "")
+
+
+load_environment()
 
 
 TOKEN_RE = re.compile(r"[a-zA-Z][a-zA-Z0-9_+-]*|\d+(?:\.\d+)?%?")
@@ -338,7 +368,7 @@ class HRRagPipeline:
         if self.llm is None:
             answer = self._extractive_answer(question, docs)
         else:
-            answer = self._llm_answer(question, context, chat_history or [])
+            answer = self._llm_answer(question, docs, context, chat_history or [])
 
         return HRRagResponse(
             answer=answer.strip(),
@@ -384,6 +414,7 @@ class HRRagPipeline:
     def _llm_answer(
         self,
         question: str,
+        docs: Sequence[Document],
         context: str,
         chat_history: Sequence[Tuple[str, str]],
     ) -> str:
@@ -416,6 +447,24 @@ class HRRagPipeline:
                 ),
             ]
         )
+
+        if create_stuff_documents_chain is not None:
+            document_prompt = PromptTemplate.from_template(
+                "Source: {source_file} | chunk {chunk_id}\n{page_content}"
+            )
+            stuff_chain = create_stuff_documents_chain(
+                self.llm,
+                prompt,
+                document_prompt=document_prompt,
+            )
+            return stuff_chain.invoke(
+                {
+                    "context": docs,
+                    "history": history_text or "None",
+                    "question": question,
+                }
+            )
+
         chain = prompt | self.llm | StrOutputParser()
         return chain.invoke({"history": history_text or "None", "context": context, "question": question})
 
@@ -523,6 +572,9 @@ def split_policy_documents(docs: Sequence[Document], chunk_size: int, chunk_over
 
 def build_embeddings(provider: str = "auto") -> Embeddings:
     selected = (provider or "auto").lower()
+    env_provider = os.getenv("EMBEDDING_PROVIDER", "").lower()
+    if selected == "auto" and env_provider and env_provider != "auto":
+        selected = env_provider
     if selected == "auto":
         if os.getenv("OPENAI_API_KEY"):
             selected = "openai"
@@ -583,6 +635,9 @@ def load_vectorstore_or_memory(
 
 def build_chat_model(provider: str = "auto", temperature: float = 0.0):
     selected = (provider or "auto").lower()
+    env_provider = os.getenv("LLM_PROVIDER", "").lower()
+    if selected == "auto" and env_provider and env_provider != "auto":
+        selected = env_provider
     if selected == "auto":
         if os.getenv("GROQ_API_KEY"):
             selected = "groq"

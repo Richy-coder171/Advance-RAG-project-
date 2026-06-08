@@ -23,6 +23,17 @@ The assistant is built as a Retrieval-Augmented Generation system. It does not a
 | Text Splitting | RecursiveCharacterTextSplitter | Splits long documents into overlapping chunks |
 | Batch Submission | pandas + CLI script | Generates Kaggle `submission.csv` answers |
 
+## Kaggle Challenge Components
+
+The HR Help Desk solution uses these core retrieval and generation components:
+
+| Component | Status | Implementation |
+| --- | --- | --- |
+| Retrieval Chain / RAG Chain | Yes | `HRRagPipeline.answer()` runs guardrails, retrieval, prompt construction, and generation |
+| Stuff Documents Chain | Yes | `create_stuff_documents_chain()` stuffs retrieved policy chunks into the answer prompt |
+| Hybrid Retrieval | Yes | Chroma vector retrieval is fused with BM25-style keyword retrieval |
+| MMR Retrieval | Yes | `max_marginal_relevance_search()` improves diversity before final reranking |
+
 ## LLM Options
 
 The pipeline supports multiple generation providers:
@@ -105,11 +116,27 @@ The retriever uses a hybrid approach:
 
 This matters because HR questions often contain exact terms such as leave type, benefit name, notice period, payroll, probation, or reimbursement.
 
-## LangChain Chain Used
+## LangChain Chains Used
 
 The HR assistant uses a fixed RAG chain rather than a dynamic agent.
 
-The generation chain follows this LangChain Expression Language pattern:
+The high-level chain is:
+
+```text
+Employee question -> Guardrails -> Hybrid retriever -> Stuff Documents Chain -> LLM answer
+```
+
+The retrieved documents are passed into a Stuff Documents Chain:
+
+```python
+stuff_chain = create_stuff_documents_chain(
+    llm,
+    prompt,
+    document_prompt=document_prompt,
+)
+```
+
+The fallback generation chain follows this LangChain Expression Language pattern:
 
 ```python
 prompt | llm | StrOutputParser()
@@ -198,6 +225,20 @@ flowchart LR
 | Streamlit chatbot | `streamlit run streamlit_hr_helpdesk.py` | Interactive demo and deployment |
 | Kaggle batch answers | `python generate_submission.py --questions test.csv --output submission.csv --rebuild` | Leaderboard submission |
 | Offline smoke test | `--embedding-provider hash --llm-provider extractive` | Development without API keys |
+
+## API Keys And LangSmith
+
+Put real keys only in `.env`, not `.env.example`.
+
+```text
+GROQ_API_KEY=your-groq-key
+OPENAI_API_KEY=your-openai-key
+LANGCHAIN_API_KEY=your-langsmith-key
+LANGCHAIN_PROJECT=zyro-hr-helpdesk
+LANGCHAIN_TRACING_V2=true
+```
+
+The code loads `.env` from the project folder or parent repo folder. For compatibility with LangSmith versions, `LANGCHAIN_API_KEY` is also copied into `LANGSMITH_API_KEY` at runtime if needed.
 
 ## Recommended Competition Settings
 

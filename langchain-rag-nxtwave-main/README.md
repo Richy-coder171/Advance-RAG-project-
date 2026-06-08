@@ -25,7 +25,7 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-Copy `.env.example` to `.env` and fill only the keys you are allowed to use. Do not commit `.env`.
+Copy `.env.example` to `.env` and fill only the keys you are allowed to use. Do not commit `.env`, and do not put real keys in `.env.example`.
 
 The pipeline auto-selects providers:
 
