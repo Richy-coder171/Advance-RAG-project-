@@ -12,9 +12,11 @@ from hr_rag.pipeline import (
     HRRagPipeline,
     InMemoryVectorStore,
     LocalHashEmbeddings,
+    answer_style_instruction,
     is_vague_query,
     weighted_reciprocal_rank_fusion,
 )
+from evaluate_hr_rag import strip_sources
 
 
 class PipelineEnhancementTests(unittest.TestCase):
@@ -46,6 +48,15 @@ class PipelineEnhancementTests(unittest.TestCase):
         self.assertGreater(fused[0][2], fused[1][2])
         self.assertEqual(fused[0][3], ["vector_mmr", "bm25"])
 
+    def test_answer_style_instruction_and_source_stripping(self):
+        self.assertIn("exact number", answer_style_instruction("How many sick leave days are available?"))
+        self.assertIn("numbered steps", answer_style_instruction("How to claim reimbursement?"))
+        self.assertIn("Yes or No", answer_style_instruction("Can I work from home?"))
+        self.assertEqual(
+            strip_sources("Employees get 10 days [12 from hr-policy.pdf].\n\nSources: [12 from hr-policy.pdf]"),
+            "Employees get 10 days.",
+        )
+
     def test_hyde_refinement_and_detailed_citations(self):
         llm = FakeListChatModel(
             responses=[
@@ -68,7 +79,7 @@ class PipelineEnhancementTests(unittest.TestCase):
         self.assertTrue(response.refined)
         self.assertEqual(response.critique_rating, "COMPLETE")
         self.assertIn("Sources:", response.answer)
-        self.assertIn("confidence", response.answer)
+        self.assertIn("[0 from onboarding.md]", response.answer)
 
 
 if __name__ == "__main__":

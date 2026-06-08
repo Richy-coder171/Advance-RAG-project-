@@ -2,6 +2,8 @@
 .streamlit/secrets.toml
 chroma_*_store/
 submissions/
+eval/results*/
+eval/tuning*/
 *.sources.json
 __pycache__/
 *.pyc

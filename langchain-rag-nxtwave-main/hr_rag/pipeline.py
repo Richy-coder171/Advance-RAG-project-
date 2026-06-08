@@ -149,6 +149,35 @@ SENSITIVE_PATTERNS = [
 ]
 
 
+def answer_style_instruction(question: str) -> str:
+    """Return concise answer-format guidance based on question intent."""
+    q = clean_text(question).lower()
+
+    if re.search(r"\b(how many|how much)\b", q) or re.search(r"\bdays?\b", q):
+        return (
+            "Start with the exact number, amount, or day count from the context. "
+            "Then add only the condition or eligibility rule needed to interpret it."
+        )
+
+    if re.search(r"\b(can i|can we|am i|are we|eligible|allowed|permitted|qualify|entitled)\b", q):
+        return (
+            "Start with Yes or No when the context supports it. "
+            "Immediately state the exact condition, exception, or approval requirement from the context."
+        )
+
+    if re.search(r"\b(how to|process|procedure|apply|claim|request|submit|report|file)\b", q):
+        return (
+            "Use numbered steps. Keep each step short and include only actions stated in the context."
+        )
+
+    if re.search(r"\b(what is|what are|define|definition|meaning)\b", q):
+        return (
+            "Give a direct definition first. Add only one short sentence for scope, eligibility, or conditions if needed."
+        )
+
+    return "Answer directly in 1-3 short sentences using only the relevant policy facts."
+
+
 @dataclass
 class HRRagConfig:
     """Configuration for the HR Help Desk RAG pipeline."""
@@ -158,10 +187,10 @@ class HRRagConfig:
     collection_name: str = "zyro_hr_policies"
     embedding_provider: str = "auto"
     llm_provider: str = "auto"
-    chunk_size: int = 900
-    chunk_overlap: int = 180
-    retrieval_k: int = 6
-    fetch_k: int = 24
+    chunk_size: int = 700
+    chunk_overlap: int = 150
+    retrieval_k: int = 10
+    fetch_k: int = 48
     temperature: float = 0.0
     max_context_chars_per_chunk: int = 1800
     vector_weight: float = 0.6
@@ -169,6 +198,7 @@ class HRRagConfig:
     rrf_k: int = 60
     min_confidence: float = 0.35
     min_retrieved_chunks: int = 2
+    max_chunks_per_source: int = 2
     enable_hyde: bool = True
     enable_self_critique: bool = True
     critique_confidence_threshold: float = 0.65
@@ -186,6 +216,7 @@ class HRRagConfig:
         self.min_confidence = max(0.0, min(1.0, self.min_confidence))
         self.critique_confidence_threshold = max(0.0, min(1.0, self.critique_confidence_threshold))
         self.min_retrieved_chunks = max(1, self.min_retrieved_chunks)
+        self.max_chunks_per_source = max(1, self.max_chunks_per_source)
 
 
 @dataclass
@@ -388,10 +419,7 @@ class HRRagPipeline:
         docs = self.retrieve(question)
         if not docs:
             return HRRagResponse(
-                answer=(
-                    "I could not find this in the Zyro Dynamics HR policy documents. "
-                    "Please contact the HR team for confirmation."
-                ),
+                answer="I could not find this information in the Zyro Dynamics HR policy documents.",
                 sources=[],
                 retrieved_context="",
             )
@@ -461,9 +489,17 @@ class HRRagPipeline:
         )
 
         selected: List[Document] = []
+        source_counts: Dict[str, int] = defaultdict(int)
         for retrieval_rank, (doc, score, confidence, methods) in enumerate(fused, start=1):
             if confidence < self.config.min_confidence and len(selected) >= self.config.min_retrieved_chunks:
                 continue
+            source = str(doc.metadata.get("source_file", doc.metadata.get("source", "unknown")))
+            if (
+                source_counts[source] >= self.config.max_chunks_per_source
+                and len(selected) >= self.config.min_retrieved_chunks
+            ):
+                continue
+            source_counts[source] += 1
             selected.append(
                 Document(
                     page_content=doc.page_content,
@@ -509,11 +545,10 @@ class HRRagPipeline:
         for doc in docs:
             source = doc.metadata.get("source_file", doc.metadata.get("source", "unknown"))
             chunk_id = doc.metadata.get("chunk_id", "n/a")
-            confidence = float(doc.metadata.get("retrieval_confidence", 0.0))
             text = clean_text(doc.page_content)[: self.config.max_context_chars_per_chunk]
             parts.append(
-                "Source: %s | chunk %s | confidence %.2f\n%s"
-                % (source, chunk_id, confidence, text)
+                "Citation: [%s from %s]\nSource file: %s\nChunk ID: %s\nPolicy text:\n%s"
+                % (chunk_id, source, source, chunk_id, text)
             )
         return "\n\n---\n\n".join(parts)
 
@@ -528,18 +563,24 @@ class HRRagPipeline:
             "Employee: %s\nAssistant: %s" % (human, assistant)
             for human, assistant in list(chat_history)[-4:]
         )
+        style_instruction = answer_style_instruction(question)
         prompt = ChatPromptTemplate.from_messages(
             [
                 (
                     "system",
                     (
                         "You are Zyro Dynamics HR Help Desk assistant. Answer employee HR policy "
-                        "questions using only the provided policy context. If the answer is missing, "
-                        "unclear, or unsupported, say that you could not find it in the Zyro Dynamics "
-                        "HR policy documents and suggest contacting HR. Do not invent policy dates, "
-                        "benefit amounts, eligibility rules, legal conclusions, or personal employee "
-                        "data. Keep the answer concise, practical, and grounded. Cite every factual "
-                        "policy claim with citations like [source_file chunk 3]."
+                        "questions using only the provided policy context.\n"
+                        "Rules:\n"
+                        "- Follow the answer style instruction exactly.\n"
+                        "- Keep the answer short, direct, and professional.\n"
+                        "- Keep policy terms, numbers, dates, limits, eligibility rules, conditions, "
+                        "and exceptions exactly as written in the context.\n"
+                        "- Do not add extra explanation, assumptions, outside policy knowledge, legal "
+                        "advice, or personal employee data.\n"
+                        "- If the context does not contain the answer, return exactly: "
+                        "I could not find this information in the Zyro Dynamics HR policy documents.\n"
+                        "- Do not write a Sources section. The application adds citations separately."
                     ),
                 ),
                 (
@@ -548,6 +589,7 @@ class HRRagPipeline:
                         "Conversation history:\n{history}\n\n"
                         "Policy context:\n{context}\n\n"
                         "Employee question: {question}\n\n"
+                        "Answer style instruction: {style_instruction}\n\n"
                         "Answer:"
                     ),
                 ),
@@ -556,7 +598,7 @@ class HRRagPipeline:
 
         if create_stuff_documents_chain is not None:
             document_prompt = PromptTemplate.from_template(
-                "Source: {source_file} | chunk {chunk_id}\n{page_content}"
+                "Citation: [{chunk_id} from {source_file}]\nPolicy text:\n{page_content}"
             )
             stuff_chain = create_stuff_documents_chain(
                 self.llm,
@@ -568,37 +610,45 @@ class HRRagPipeline:
                     "context": docs,
                     "history": history_text or "None",
                     "question": question,
+                    "style_instruction": style_instruction,
                 }
             )
 
         chain = prompt | self.llm | StrOutputParser()
-        return chain.invoke({"history": history_text or "None", "context": context, "question": question})
+        return chain.invoke(
+            {
+                "history": history_text or "None",
+                "context": context,
+                "question": question,
+                "style_instruction": style_instruction,
+            }
+        )
 
     def _extractive_answer(self, question: str, docs: Sequence[Document]) -> str:
         sentences = []
         query_terms = set(tokenize(question))
         for doc in docs:
-            source = doc.metadata.get("source_file", "unknown")
-            chunk_id = doc.metadata.get("chunk_id", "n/a")
             for sentence in split_sentences(doc.page_content):
                 overlap = len(query_terms & set(tokenize(sentence)))
                 if overlap:
-                    sentences.append((overlap, source, chunk_id, clean_text(sentence)))
+                    sentences.append((overlap, len(sentence), clean_text(sentence)))
         sentences.sort(key=lambda item: item[0], reverse=True)
-        selected = sentences[:4]
+        selected: List[str] = []
+        seen = set()
+        for _score, _length, sentence in sentences:
+            normalized = sentence.lower()
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            selected.append(sentence)
+            if len(selected) >= 4:
+                break
         if not selected:
-            selected = [
-                (0, doc.metadata.get("source_file", "unknown"), doc.metadata.get("chunk_id", "n/a"), clean_text(doc.page_content)[:350])
-                for doc in docs[:2]
-            ]
-        lines = [
-            "I found the most relevant Zyro Dynamics HR policy text below. Configure GROQ_API_KEY, OPENAI_API_KEY, or Ollama for a generated answer."
-        ]
-        for _score, source, chunk_id, sentence in selected:
-            lines.append("- %s [%s chunk %s]" % (sentence, source, chunk_id))
-        return "\n".join(lines)
+            return "I could not find this information in the Zyro Dynamics HR policy documents."
+        return " ".join(selected)
 
     def _self_critique(self, question: str, context: str, draft: str) -> Tuple[str, Optional[str]]:
+        style_instruction = answer_style_instruction(question)
         prompt = ChatPromptTemplate.from_messages(
             [
                 (
@@ -607,18 +657,31 @@ class HRRagPipeline:
                         "You are a strict HR RAG answer reviewer. Check the draft only against the supplied "
                         "policy context. Do not add unsupported facts. Return exactly two sections:\n"
                         "RATING: COMPLETE, PARTIAL, or MISSING\n"
-                        "REFINED ANSWER: a concise grounded answer with source citations."
+                        "REFINED ANSWER: follow the answer style instruction exactly. Keep exact policy "
+                        "terms, numbers, dates, and conditions. If support is missing, use exactly: "
+                        "I could not find this information in the Zyro Dynamics HR policy documents. "
+                        "Do not write a Sources section."
                     ),
                 ),
                 (
                     "human",
-                    "Question: {question}\n\nPolicy context:\n{context}\n\nDraft answer:\n{draft}",
+                    (
+                        "Question: {question}\n\n"
+                        "Answer style instruction: {style_instruction}\n\n"
+                        "Policy context:\n{context}\n\n"
+                        "Draft answer:\n{draft}"
+                    ),
                 ),
             ]
         )
         try:
             output = (prompt | self.llm | StrOutputParser()).invoke(
-                {"question": question, "context": context, "draft": draft}
+                {
+                    "question": question,
+                    "style_instruction": style_instruction,
+                    "context": context,
+                    "draft": draft,
+                }
             )
             rating = parse_section(output, "RATING:")
             refined = parse_section(output, "REFINED ANSWER:")
@@ -994,21 +1057,13 @@ def average_confidence(docs: Sequence[Document]) -> float:
 
 
 def append_citation_block(answer: str, sources: Sequence[Dict[str, str]]) -> str:
-    if not sources or "\n\nSources:\n" in answer:
+    if not sources or "\n\nSources:" in answer or answer.strip().startswith("Sources:"):
         return answer
-    lines = ["", "Sources:"]
-    for source in sources:
-        lines.append(
-            "- [%s chunk %s] confidence=%s, methods=%s: %s"
-            % (
-                source["source_file"],
-                source["chunk_id"],
-                source.get("confidence", "0.00"),
-                source.get("retrieval_methods", ""),
-                source["preview"],
-            )
-        )
-    return answer.rstrip() + "\n" + "\n".join(lines)
+    citations = [
+        "[%s from %s]" % (source["chunk_id"], source["source_file"])
+        for source in sources
+    ]
+    return answer.rstrip() + "\n\nSources: " + "; ".join(citations)
 
 
 def parse_section(text: str, label: str) -> str:

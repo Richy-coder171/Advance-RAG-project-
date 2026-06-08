@@ -22,6 +22,8 @@ The assistant is built as a Retrieval-Augmented Generation system. It does not a
 | DOCX Loading | built-in zip/XML parser | Reads Word policy documents without extra dependencies |
 | Text Splitting | RecursiveCharacterTextSplitter | Splits long documents into overlapping chunks |
 | Batch Submission | pandas + CLI script | Generates Kaggle `submission.csv` answers |
+| Evaluation | `evaluate_hr_rag.py` | Scores validation questions and writes summary/details reports |
+| Tuning | `tune_hr_rag.py` | Runs the required chunking and retrieval grid and writes a leaderboard |
 
 ## Kaggle Challenge Components
 
@@ -35,7 +37,7 @@ The HR Help Desk solution uses these core retrieval and generation components:
 | MMR Retrieval | Yes | `max_marginal_relevance_search()` improves diversity before final reranking |
 | Weighted Reciprocal Rank Fusion | Yes | Merges MMR vector and BM25 ranked lists with configurable 60/40 weights |
 | Conditional HyDE | Yes | Rewrites only vague/short queries before vector retrieval |
-| Confidence + Detailed Citations | Yes | Adds normalized fusion confidence, methods, file, chunk ID, and preview |
+| Confidence + Source Attribution | Yes | Adds normalized fusion confidence in debug files and answer citations as `[chunk_id from source_file]` |
 | Conditional Self-Critique | Yes | Refines low-confidence answers and batch submission answers |
 
 ## LLM Options
@@ -249,6 +251,8 @@ flowchart LR
 | `hr_rag/__init__.py` | Package export file |
 | `streamlit_hr_helpdesk.py` | Streamlit chatbot UI |
 | `generate_submission.py` | Kaggle batch submission generator |
+| `evaluate_hr_rag.py` | HR validation/evaluation runner |
+| `eval/hr_validation_sample.jsonl` | Starter validation set |
 | `hr_docs/README.md` | Policy document folder instructions |
 | `hr_docs/temp_policies/` | Temporary HR policy documents for local testing |
 | `.env.example` | Safe environment variable template |
@@ -260,6 +264,7 @@ flowchart LR
 | --- | --- | --- |
 | Streamlit chatbot | `streamlit run streamlit_hr_helpdesk.py` | Interactive demo and deployment |
 | Kaggle batch answers | `python generate_submission.py --questions test.csv --output submission.csv --rebuild` | Leaderboard submission |
+| Evaluation | `python evaluate_hr_rag.py --validation-file eval/hr_validation_sample.jsonl --rebuild` | Validation metrics and failure analysis |
 | Offline smoke test | `--embedding-provider hash --llm-provider extractive` | Development without API keys |
 
 ## API Keys And LangSmith
@@ -281,13 +286,14 @@ The code loads `.env` from the project folder or parent repo folder. For compati
 Start with:
 
 ```text
-chunk_size = 900
-chunk_overlap = 180
-retrieval_k = 6
-fetch_k = 24
+chunk_size = 700
+chunk_overlap = 150
+retrieval_k = 10
+fetch_k = 48
 vector_weight = 0.60
 keyword_weight = 0.40
 min_confidence = 0.35
+max_chunks_per_source = 2
 critique_confidence_threshold = 0.65
 embedding_provider = openai or ollama
 llm_provider = groq or openai
@@ -296,11 +302,13 @@ llm_provider = groq or openai
 Then tune:
 
 - `chunk_size`: try `700`, `900`, `1100`
-- `retrieval_k`: try `5`, `6`, `8`
+- `chunk_overlap`: try `150`, `180`, `220`
+- `retrieval_k`: try `6`, `8`, `10`
 - `fetch_k`: try `24`, `36`, `48`
 - `vector_weight`: try `0.50`, `0.60`, `0.70`
+- `keyword_weight`: use `0.50`, `0.40`, `0.30` with those vector weights
 - `min_confidence`: tune only against a labeled validation set
-- Inspect `.sources.json` after each batch run to see whether the correct policy chunks were retrieved.
+- Run `tune_hr_rag.py` and inspect `leaderboard.csv`, `details.csv`, and `retrieved_chunks.csv`.
 
 ## Design Summary
 

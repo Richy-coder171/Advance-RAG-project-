@@ -75,12 +75,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--db-path", default="chroma_hr_store", help="Vector DB folder.")
     parser.add_argument("--embedding-provider", default="auto", choices=["auto", "openai", "ollama", "hash"])
     parser.add_argument("--llm-provider", default="auto", choices=["auto", "groq", "openai", "ollama", "extractive"])
-    parser.add_argument("--chunk-size", type=int, default=900)
-    parser.add_argument("--chunk-overlap", type=int, default=180)
-    parser.add_argument("--retrieval-k", type=int, default=6)
-    parser.add_argument("--fetch-k", type=int, default=24)
+    parser.add_argument("--chunk-size", type=int, default=700)
+    parser.add_argument("--chunk-overlap", type=int, default=150)
+    parser.add_argument("--retrieval-k", type=int, default=10)
+    parser.add_argument("--fetch-k", type=int, default=48)
     parser.add_argument("--vector-weight", type=float, default=0.6, help="RRF vector/MMR weight; BM25 uses 1-weight.")
     parser.add_argument("--min-confidence", type=float, default=0.35, help="Minimum normalized RRF confidence.")
+    parser.add_argument("--max-chunks-per-source", type=int, default=2, help="Limit one file from dominating top-k retrieval.")
     parser.add_argument("--critique-threshold", type=float, default=0.65, help="Refine answers below this confidence.")
     parser.add_argument("--disable-hyde", action="store_true", help="Disable conditional HyDE query rewriting.")
     parser.add_argument("--disable-self-critique", action="store_true", help="Disable batch answer refinement.")
@@ -107,6 +108,7 @@ def main() -> None:
         vector_weight=args.vector_weight,
         keyword_weight=1.0 - args.vector_weight,
         min_confidence=args.min_confidence,
+        max_chunks_per_source=args.max_chunks_per_source,
         enable_hyde=not args.disable_hyde,
         enable_self_critique=not args.disable_self_critique,
         critique_confidence_threshold=args.critique_threshold,

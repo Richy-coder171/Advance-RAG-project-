@@ -37,13 +37,14 @@ def make_config() -> HRRagConfig:
         db_path=st.session_state.get("db_path", "chroma_hr_store"),
         embedding_provider=st.session_state.get("embedding_provider", "auto"),
         llm_provider=st.session_state.get("llm_provider", "auto"),
-        chunk_size=int(st.session_state.get("chunk_size", 900)),
-        chunk_overlap=int(st.session_state.get("chunk_overlap", 180)),
-        retrieval_k=int(st.session_state.get("retrieval_k", 6)),
-        fetch_k=int(st.session_state.get("fetch_k", 24)),
+        chunk_size=int(st.session_state.get("chunk_size", 700)),
+        chunk_overlap=int(st.session_state.get("chunk_overlap", 150)),
+        retrieval_k=int(st.session_state.get("retrieval_k", 10)),
+        fetch_k=int(st.session_state.get("fetch_k", 48)),
         vector_weight=float(st.session_state.get("vector_weight", 0.6)),
         keyword_weight=1.0 - float(st.session_state.get("vector_weight", 0.6)),
         min_confidence=float(st.session_state.get("min_confidence", 0.35)),
+        max_chunks_per_source=int(st.session_state.get("max_chunks_per_source", 2)),
         enable_hyde=bool(st.session_state.get("enable_hyde", True)),
         enable_self_critique=bool(st.session_state.get("enable_self_critique", True)),
         critique_confidence_threshold=float(st.session_state.get("critique_confidence_threshold", 0.65)),
@@ -75,15 +76,18 @@ with st.sidebar:
         ["auto", "groq", "openai", "ollama", "extractive"],
         index=["auto", "groq", "openai", "ollama", "extractive"].index(st.session_state.get("llm_provider", "auto")),
     )
-    st.session_state.chunk_size = st.slider("Chunk size", 400, 1800, int(st.session_state.get("chunk_size", 900)), 50)
-    st.session_state.chunk_overlap = st.slider("Chunk overlap", 50, 400, int(st.session_state.get("chunk_overlap", 180)), 25)
-    st.session_state.retrieval_k = st.slider("Retrieved chunks", 3, 10, int(st.session_state.get("retrieval_k", 6)), 1)
-    st.session_state.fetch_k = st.slider("Candidate chunks", 10, 60, int(st.session_state.get("fetch_k", 24)), 2)
+    st.session_state.chunk_size = st.slider("Chunk size", 400, 1800, int(st.session_state.get("chunk_size", 700)), 50)
+    st.session_state.chunk_overlap = st.slider("Chunk overlap", 50, 400, int(st.session_state.get("chunk_overlap", 150)), 25)
+    st.session_state.retrieval_k = st.slider("Retrieved chunks", 3, 10, int(st.session_state.get("retrieval_k", 10)), 1)
+    st.session_state.fetch_k = st.slider("Candidate chunks", 10, 60, int(st.session_state.get("fetch_k", 48)), 2)
     st.session_state.vector_weight = st.slider(
         "Vector retrieval weight", 0.0, 1.0, float(st.session_state.get("vector_weight", 0.6)), 0.05
     )
     st.session_state.min_confidence = st.slider(
         "Minimum confidence", 0.0, 1.0, float(st.session_state.get("min_confidence", 0.35)), 0.05
+    )
+    st.session_state.max_chunks_per_source = st.slider(
+        "Max chunks per source", 1, 5, int(st.session_state.get("max_chunks_per_source", 2)), 1
     )
     st.session_state.enable_hyde = st.toggle(
         "Conditional HyDE", value=bool(st.session_state.get("enable_hyde", True))
@@ -99,7 +103,7 @@ with st.sidebar:
         0.05,
     )
     st.session_state.append_source_block = st.toggle(
-        "Detailed citations", value=bool(st.session_state.get("append_source_block", True))
+        "Answer citations", value=bool(st.session_state.get("append_source_block", True))
     )
 
     rebuild = st.button("Rebuild Index", use_container_width=True)

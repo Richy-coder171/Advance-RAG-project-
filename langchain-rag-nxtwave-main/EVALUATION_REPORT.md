@@ -154,6 +154,18 @@ The report was worth using, but not literally. Several fixes were already implem
 
 The current system is stronger than the evaluated notebook because it includes hybrid retrieval, MMR, weighted RRF, confidence scoring, citations, HyDE, and self-critique.
 
+An executable HR evaluation runner is now available:
+
+```bash
+python evaluate_hr_rag.py \
+  --docs-path hr_docs/temp_policies \
+  --validation-file eval/hr_validation_sample.jsonl \
+  --output-dir eval/results \
+  --embedding-provider hash \
+  --llm-provider extractive \
+  --rebuild
+```
+
 The next leaderboard jump will most likely come from:
 
 1. A real HR validation set.
