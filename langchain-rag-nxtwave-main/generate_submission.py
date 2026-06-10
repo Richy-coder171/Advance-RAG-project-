@@ -65,7 +65,7 @@ def build_output_frame(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate Kaggle submission answers with the HR RAG pipeline.")
-    parser.add_argument("--docs-path", default="hr_docs", help="Folder containing Zyro HR policy documents.")
+    parser.add_argument("--docs-path", default="hr_docs/official", help="Folder containing official HR policy documents.")
     parser.add_argument("--questions", required=True, help="CSV file containing evaluation questions.")
     parser.add_argument("--output", default="submission.csv", help="Output submission CSV path.")
     parser.add_argument("--sample-submission", default=None, help="Optional sample_submission.csv to preserve column order.")

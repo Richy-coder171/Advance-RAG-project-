@@ -128,6 +128,8 @@ HR_KEYWORDS = {
 OBVIOUS_OUT_OF_SCOPE = {
     "weather",
     "stock price",
+    "stock option",
+    "esop",
     "movie",
     "recipe",
     "cricket score",
@@ -140,12 +142,27 @@ OBVIOUS_OUT_OF_SCOPE = {
     "election",
     "shopping",
     "flight booking",
+    "apply for a job",
+    "recruitment process",
+    "hiring process",
+    "product features",
+    "revenue",
+    "financial results",
+    "performing financially",
+    "profit",
+    "ebitda",
 }
 
 SENSITIVE_PATTERNS = [
     re.compile(r"\b(ssn|social security|aadhaar|pan number|bank account|passport)\b", re.I),
     re.compile(r"\b(show|tell|give|share|reveal)\b.*\b(employee|coworker|colleague).*\b(salary|pay|address|phone|email|record)\b", re.I),
     re.compile(r"\b(private key|api key|password|secret token)\b", re.I),
+]
+
+EXTERNAL_ORGANIZATION_PATTERNS = [
+    re.compile(r"\b(zoho|freshworks|salesforce)\b", re.I),
+    re.compile(r"\b(other|another|different|competitor)\s+(company|companies|organization|employer)s?\b", re.I),
+    re.compile(r"\bcompare\b.*\b(company|companies|employer|policy|policies)\b", re.I),
 ]
 
 
@@ -182,8 +199,8 @@ def answer_style_instruction(question: str) -> str:
 class HRRagConfig:
     """Configuration for the HR Help Desk RAG pipeline."""
 
-    docs_path: str = "hr_docs"
-    db_path: str = "chroma_hr_store"
+    docs_path: str = "hr_docs/official"
+    db_path: str = "chroma_zyro_official_store"
     collection_name: str = "zyro_hr_policies"
     embedding_provider: str = "auto"
     llm_provider: str = "auto"
@@ -545,10 +562,11 @@ class HRRagPipeline:
         for doc in docs:
             source = doc.metadata.get("source_file", doc.metadata.get("source", "unknown"))
             chunk_id = doc.metadata.get("chunk_id", "n/a")
+            retrieval_rank = doc.metadata.get("retrieval_rank", "n/a")
             text = clean_text(doc.page_content)[: self.config.max_context_chars_per_chunk]
             parts.append(
-                "Citation: [%s from %s]\nSource file: %s\nChunk ID: %s\nPolicy text:\n%s"
-                % (chunk_id, source, source, chunk_id, text)
+                "Relevance rank: %s\nCitation: [%s from %s]\nSource file: %s\nChunk ID: %s\nPolicy text:\n%s"
+                % (retrieval_rank, chunk_id, source, source, chunk_id, text)
             )
         return "\n\n---\n\n".join(parts)
 
@@ -574,6 +592,8 @@ class HRRagPipeline:
                         "Rules:\n"
                         "- Follow the answer style instruction exactly.\n"
                         "- Keep the answer short, direct, and professional.\n"
+                        "- Prioritize the lowest relevance-rank chunks that directly answer the question. "
+                        "Ignore retrieved text about unrelated policies.\n"
                         "- Keep policy terms, numbers, dates, limits, eligibility rules, conditions, "
                         "and exceptions exactly as written in the context.\n"
                         "- Do not add extra explanation, assumptions, outside policy knowledge, legal "
@@ -598,7 +618,9 @@ class HRRagPipeline:
 
         if create_stuff_documents_chain is not None:
             document_prompt = PromptTemplate.from_template(
-                "Citation: [{chunk_id} from {source_file}]\nPolicy text:\n{page_content}"
+                "Relevance rank: {retrieval_rank}\n"
+                "Citation: [{chunk_id} from {source_file}]\n"
+                "Policy text:\n{page_content}"
             )
             stuff_chain = create_stuff_documents_chain(
                 self.llm,
@@ -702,8 +724,11 @@ class HRRagPipeline:
                     "I cannot help reveal credentials, sensitive personal data, or another employee's private records.",
                 )
 
+        if any(pattern.search(q) for pattern in EXTERNAL_ORGANIZATION_PATTERNS):
+            return False, "I can only answer HR-related questions from Zyro Dynamics policy documents."
+
         if any(term in q_lower for term in OBVIOUS_OUT_OF_SCOPE):
-            return False, "I can only answer questions about Zyro Dynamics HR policies and employee processes."
+            return False, "I can only answer HR-related questions from Zyro Dynamics policy documents."
 
         if any(term in q_lower for term in HR_KEYWORDS):
             return True, None
@@ -983,7 +1008,8 @@ def tokenize(text: str) -> List[str]:
 
 
 def clean_text(text: str) -> str:
-    return re.sub(r"\s+", " ", (text or "").strip())
+    without_controls = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", " ", text or "")
+    return re.sub(r"\s+", " ", without_controls.strip())
 
 
 def split_sentences(text: str) -> Iterable[str]:

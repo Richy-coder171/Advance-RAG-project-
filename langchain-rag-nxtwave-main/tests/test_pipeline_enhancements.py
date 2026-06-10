@@ -57,6 +57,22 @@ class PipelineEnhancementTests(unittest.TestCase):
             "Employees get 10 days.",
         )
 
+    def test_competition_out_of_scope_guardrails(self):
+        config = HRRagConfig(retrieval_k=2)
+        vectorstore = InMemoryVectorStore.from_documents(self.docs, LocalHashEmbeddings())
+        pipeline = HRRagPipeline(config, vectorstore, self.docs, llm=None)
+
+        blocked_questions = [
+            "What was Acrux Dynamics' revenue last year and how is the company performing financially?",
+            "Can you tell me the leave policy at Zoho or Freshworks?",
+            "What are the product features and how do they compare to Salesforce?",
+        ]
+        for question in blocked_questions:
+            response = pipeline.answer(question)
+            self.assertTrue(response.blocked, question)
+
+        self.assertFalse(pipeline.answer("What is the performance review policy?").blocked)
+
     def test_hyde_refinement_and_detailed_citations(self):
         llm = FakeListChatModel(
             responses=[

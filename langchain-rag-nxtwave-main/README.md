@@ -1,15 +1,18 @@
 # Zyro Dynamics HR Help Desk RAG
 
-This project is set up for the Kaggle InClass HR Help Desk assignment. It builds a Retrieval-Augmented Generation pipeline that answers employee questions from Zyro Dynamics HR policy documents, blocks out-of-scope or sensitive requests, and can run as either a Streamlit chatbot or a batch submission generator.
+This project is set up for the Kaggle InClass HR Help Desk assignment. It builds a Retrieval-Augmented Generation pipeline that answers employee questions from the official 11 HR policy PDFs, blocks out-of-scope or sensitive requests, and can run as either a Streamlit chatbot or the exact encrypted competition submission generator.
 
 ## What Is Included
 
 - `hr_rag/pipeline.py`: reusable RAG pipeline with document loading, chunking, Chroma retrieval, lightweight hybrid reranking, HR guardrails, citations, and offline fallback embeddings.
-- `streamlit_hr_helpdesk.py`: interactive HR chatbot for local or Streamlit Cloud deployment.
+- `app.py`: official Streamlit Cloud entry point.
+- `streamlit_hr_helpdesk.py`: interactive HR chatbot implementation.
 - `generate_submission.py`: batch runner that reads Kaggle questions and writes `submission.csv`.
+- `generate_competition_submission.py`: reads encrypted Q01-Q15 from the official starter notebook and writes the exact five-column competition submission.
 - `evaluate_hr_rag.py`: validation runner for retrieval recall, answer overlap, confidence, HyDE/refinement usage, and guardrail checks.
 - `tune_hr_rag.py`: grid tuner for chunking, hybrid retrieval weights, top-k, and fetch-k.
-- `hr_docs/`: place the official Zyro Dynamics HR policy documents here.
+- `hr_docs/official/`: the official 11 competition HR policy PDFs.
+- `competition/`: unchanged starter notebook, sample submission, and competition instructions.
 - `eval/hr_validation_sample.jsonl`: small starter validation set for local testing.
 - `.env.example`: safe template for API keys and tracing settings.
 - `TECHNICAL_README.md`: architecture, LangChain components, LLM options, vector database, chain design, and visual diagrams.
@@ -44,11 +47,11 @@ Top-k retrieval also limits repeated chunks from the same source file so one han
 
 ## Add HR Policy Documents
 
-Put the official Zyro Dynamics policy files in `hr_docs/`.
+The official Zyro Dynamics policy files are in `hr_docs/official/`.
 
 Supported formats: `.md`, `.txt`, `.pdf`, `.docx`, `.csv`, `.json`.
 
-Temporary test policy files are currently stored in `hr_docs/temp_policies/`.
+Temporary test policy files remain in `hr_docs/temp_policies/` and are not used by the deployed app or official submission generator.
 
 Do not add fabricated policy text for the competition run. The answer prompt is designed to say when the policy documents do not contain an answer.
 
@@ -58,9 +61,53 @@ Do not add fabricated policy text for the competition run. The answer prompt is 
 streamlit run streamlit_hr_helpdesk.py
 ```
 
-Use the sidebar to choose the policy folder, rebuild the index, and tune chunking/retrieval settings. For the temporary corpus, set the policy folder to `hr_docs/temp_policies`.
+Use the sidebar to rebuild the index and inspect retrieval. The deployed app defaults to `hr_docs/official`.
+
+For Streamlit Community Cloud, set the app file to:
+
+```text
+langchain-rag-nxtwave-main/app.py
+```
+
+Add these values in the Streamlit app's Secrets settings:
+
+```toml
+GROQ_API_KEY = "your-groq-key"
+LANGCHAIN_API_KEY = "your-langsmith-key"
+LANGCHAIN_PROJECT = "zyro-rag-challenge"
+LANGCHAIN_TRACING_V2 = "true"
+LANGSMITH_TRACING = "true"
+LLM_PROVIDER = "groq"
+EMBEDDING_PROVIDER = "hash"
+```
 
 ## Generate A Kaggle Submission
+
+### Official Encrypted Competition Submission
+
+After deploying the Streamlit app and sharing a LangSmith trace:
+
+```powershell
+python generate_competition_submission.py `
+  --streamlit-link "https://YOUR-APP.streamlit.app" `
+  --langsmith-link "https://smith.langchain.com/public/YOUR-TRACE/r" `
+  --embedding-provider hash `
+  --llm-provider groq `
+  --rebuild
+```
+
+This command:
+
+- verifies exactly 11 official PDFs
+- decrypts official Q01-Q15 from `competition/Starter_Notebook.ipynb`
+- keeps Q01-Q10 in scope and refuses Q11-Q15
+- removes UI citations before encrypting scored answers
+- creates exactly 15 rows with `question_id`, `question_enc`, `answer_enc`, `streamlit_link`, and `langsmith_link`
+- validates all fields and URL patterns before finishing
+
+The final file is written to `submissions/submission.csv`. The local `.sources.json` file contains readable answers and retrieval evidence for inspection.
+
+### Generic Batch Submission
 
 Example local command:
 

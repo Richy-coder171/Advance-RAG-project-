@@ -10,6 +10,34 @@ from hr_rag import HRRagConfig, HRRagPipeline
 
 st.set_page_config(page_title="Zyro HR Help Desk", layout="wide")
 
+
+def load_streamlit_secrets() -> None:
+    keys = [
+        "GROQ_API_KEY",
+        "OPENAI_API_KEY",
+        "LANGCHAIN_API_KEY",
+        "LANGSMITH_API_KEY",
+        "LANGCHAIN_PROJECT",
+        "LANGCHAIN_TRACING_V2",
+        "LANGSMITH_TRACING",
+        "LLM_PROVIDER",
+        "EMBEDDING_PROVIDER",
+        "GROQ_MODEL",
+        "OPENAI_MODEL",
+        "OPENAI_EMBEDDING_MODEL",
+    ]
+    for key in keys:
+        try:
+            value = st.secrets.get(key)
+        except Exception:
+            value = None
+        if value and not os.getenv(key):
+            os.environ[key] = str(value)
+    os.environ.setdefault("LANGCHAIN_PROJECT", "zyro-rag-challenge")
+
+
+load_streamlit_secrets()
+
 st.markdown(
     """
 <style>
@@ -33,8 +61,8 @@ st.markdown(
 
 def make_config() -> HRRagConfig:
     return HRRagConfig(
-        docs_path=st.session_state.get("docs_path", "hr_docs"),
-        db_path=st.session_state.get("db_path", "chroma_hr_store"),
+        docs_path=st.session_state.get("docs_path", "hr_docs/official"),
+        db_path=st.session_state.get("db_path", "chroma_zyro_official_store"),
         embedding_provider=st.session_state.get("embedding_provider", "auto"),
         llm_provider=st.session_state.get("llm_provider", "auto"),
         chunk_size=int(st.session_state.get("chunk_size", 700)),
@@ -64,8 +92,12 @@ def config_cache_key(cfg: HRRagConfig) -> str:
 
 with st.sidebar:
     st.title("Zyro HR")
-    st.session_state.docs_path = st.text_input("Policy docs folder", value=st.session_state.get("docs_path", "hr_docs"))
-    st.session_state.db_path = st.text_input("Vector DB folder", value=st.session_state.get("db_path", "chroma_hr_store"))
+    st.session_state.docs_path = st.text_input(
+        "Policy docs folder", value=st.session_state.get("docs_path", "hr_docs/official")
+    )
+    st.session_state.db_path = st.text_input(
+        "Vector DB folder", value=st.session_state.get("db_path", "chroma_zyro_official_store")
+    )
     st.session_state.embedding_provider = st.selectbox(
         "Embeddings",
         ["auto", "openai", "ollama", "hash"],

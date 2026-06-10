@@ -22,6 +22,7 @@ The assistant is built as a Retrieval-Augmented Generation system. It does not a
 | DOCX Loading | built-in zip/XML parser | Reads Word policy documents without extra dependencies |
 | Text Splitting | RecursiveCharacterTextSplitter | Splits long documents into overlapping chunks |
 | Batch Submission | pandas + CLI script | Generates Kaggle `submission.csv` answers |
+| Official Competition Submission | Fernet + CLI script | Generates encrypted Q01-Q15 answers with mandatory Streamlit/LangSmith links |
 | Evaluation | `evaluate_hr_rag.py` | Scores validation questions and writes summary/details reports |
 | Tuning | `tune_hr_rag.py` | Runs the required chunking and retrieval grid and writes a leaderboard |
 
@@ -242,6 +243,20 @@ flowchart LR
     E --> F[submission.csv]
     E --> G[sources.json<br/>debug retrieval evidence]
 ```
+
+## Official Competition Submission
+
+`generate_competition_submission.py` implements the exact official starter-notebook contract:
+
+1. Verify `hr_docs/official/` contains exactly 11 PDFs.
+2. Read the unchanged `competition/Starter_Notebook.ipynb`.
+3. Extract its Fernet submission key and encrypted Q01-Q15 questions.
+4. Decrypt and answer all 15 questions with the HR RAG pipeline.
+5. Remove UI citation blocks from answers before semantic-similarity scoring.
+6. Re-encrypt questions and answers with the official Fernet key.
+7. Validate exactly 15 rows, the five required columns, and both mandatory URL patterns.
+
+The official competition question split is covered by guardrail tests: Q01-Q10 are allowed and Q11-Q15 are refused.
 
 ## Main Files Added
 

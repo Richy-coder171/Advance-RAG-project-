@@ -11,3 +11,4 @@ langsmith
 pypdf
 pandas
 python-dotenv
+cryptography
