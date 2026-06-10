@@ -5,9 +5,6 @@ from pathlib import Path
 
 import streamlit as st
 
-from hr_rag import HRRagConfig, HRRagPipeline
-
-
 st.set_page_config(page_title="Zyro HR Help Desk", layout="wide")
 
 
@@ -59,7 +56,9 @@ st.markdown(
 )
 
 
-def make_config() -> HRRagConfig:
+def make_config():
+    from hr_rag import HRRagConfig
+
     return HRRagConfig(
         docs_path=st.session_state.get("docs_path", "hr_docs/official"),
         db_path=st.session_state.get("db_path", "chroma_zyro_official_store"),
@@ -80,13 +79,15 @@ def make_config() -> HRRagConfig:
     )
 
 
-@st.cache_resource(show_spinner=False)
-def load_pipeline(config_json: str, rebuild: bool) -> HRRagPipeline:
+@st.cache_resource(show_spinner="Loading HR policies and preparing the RAG pipeline...")
+def load_pipeline(config_json: str, rebuild: bool):
+    from hr_rag import HRRagConfig, HRRagPipeline
+
     cfg = HRRagConfig(**json.loads(config_json))
     return HRRagPipeline.from_config(cfg, rebuild=rebuild)
 
 
-def config_cache_key(cfg: HRRagConfig) -> str:
+def config_cache_key(cfg) -> str:
     return json.dumps(cfg.__dict__, sort_keys=True)
 
 
@@ -153,6 +154,9 @@ if "last_sources" not in st.session_state:
 if "last_run" not in st.session_state:
     st.session_state.last_run = {}
 
+startup_notice = st.empty()
+startup_notice.info("Starting the HR assistant. The first cloud launch can take a minute...")
+
 cfg = make_config()
 
 try:
@@ -160,13 +164,17 @@ try:
     ready_error = None
 except Exception as exc:
     pipeline = None
-    ready_error = str(exc)
+    ready_error = exc
+
+startup_notice.empty()
 
 left, right = st.columns([2.2, 1], gap="large")
 
 with left:
     if ready_error:
-        st.error(ready_error)
+        st.error("The HR assistant could not finish starting. Open the details below to diagnose the deployment.")
+        with st.expander("Startup error details", expanded=True):
+            st.exception(ready_error)
     else:
         for message in st.session_state.messages:
             with st.chat_message(message["role"]):
