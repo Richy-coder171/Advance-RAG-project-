@@ -66,7 +66,7 @@ def make_config():
         llm_provider=st.session_state.get("llm_provider", "auto"),
         chunk_size=int(st.session_state.get("chunk_size", 700)),
         chunk_overlap=int(st.session_state.get("chunk_overlap", 150)),
-        retrieval_k=int(st.session_state.get("retrieval_k", 10)),
+        retrieval_k=int(st.session_state.get("retrieval_k", 6)),
         fetch_k=int(st.session_state.get("fetch_k", 48)),
         vector_weight=float(st.session_state.get("vector_weight", 0.6)),
         keyword_weight=1.0 - float(st.session_state.get("vector_weight", 0.6)),
@@ -111,7 +111,7 @@ with st.sidebar:
     )
     st.session_state.chunk_size = st.slider("Chunk size", 400, 1800, int(st.session_state.get("chunk_size", 700)), 50)
     st.session_state.chunk_overlap = st.slider("Chunk overlap", 50, 400, int(st.session_state.get("chunk_overlap", 150)), 25)
-    st.session_state.retrieval_k = st.slider("Retrieved chunks", 3, 10, int(st.session_state.get("retrieval_k", 10)), 1)
+    st.session_state.retrieval_k = st.slider("Retrieved chunks", 3, 10, int(st.session_state.get("retrieval_k", 6)), 1)
     st.session_state.fetch_k = st.slider("Candidate chunks", 10, 60, int(st.session_state.get("fetch_k", 48)), 2)
     st.session_state.vector_weight = st.slider(
         "Vector retrieval weight", 0.0, 1.0, float(st.session_state.get("vector_weight", 0.6)), 0.05

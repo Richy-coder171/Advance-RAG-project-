@@ -79,6 +79,7 @@ LANGCHAIN_TRACING_V2 = "true"
 LANGSMITH_TRACING = "true"
 LLM_PROVIDER = "groq"
 EMBEDDING_PROVIDER = "hash"
+GROQ_MODEL = "llama-3.3-70b-versatile"
 ```
 
 ## Generate A Kaggle Submission
@@ -146,7 +147,7 @@ python generate_submission.py \
   --output submission.csv \
   --chunk-size 700 \
   --chunk-overlap 150 \
-  --retrieval-k 10 \
+  --retrieval-k 6 \
   --fetch-k 48 \
   --vector-weight 0.6 \
   --min-confidence 0.35 \
@@ -210,7 +211,7 @@ Tune against a small validation set before submitting:
 - Try `retrieval_k` values `6`, `8`, and `10`.
 - Try `fetch_k` values `24`, `36`, and `48`.
 - Try vector/BM25 weights of `0.50/0.50`, `0.60/0.40`, and `0.70/0.30`.
-- The current tuned default is `chunk_size=700`, `chunk_overlap=150`, `retrieval_k=10`, `fetch_k=48`, and vector/BM25 `0.60/0.40`.
+- The current tuned default is `chunk_size=700`, `chunk_overlap=150`, `retrieval_k=6`, `fetch_k=48`, and vector/BM25 `0.60/0.40`.
 - Inspect the generated `.sources.json` file after every run to confirm the right policies were retrieved.
 - Prefer grounded answers over broad explanations. The competition will likely reward answers that match the internal policy text.
 - Keep guardrails strict for non-HR, sensitive personal data, credentials, and unsupported questions.

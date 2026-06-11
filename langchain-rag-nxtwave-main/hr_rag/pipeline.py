@@ -71,6 +71,34 @@ load_environment()
 
 
 TOKEN_RE = re.compile(r"[a-zA-Z][a-zA-Z0-9_+-]*|\d+(?:\.\d+)?%?")
+QUERY_STOPWORDS = {
+    "a",
+    "an",
+    "and",
+    "are",
+    "as",
+    "at",
+    "be",
+    "by",
+    "does",
+    "for",
+    "from",
+    "how",
+    "i",
+    "in",
+    "is",
+    "it",
+    "of",
+    "on",
+    "or",
+    "the",
+    "to",
+    "what",
+    "when",
+    "which",
+    "who",
+    "with",
+}
 
 HR_KEYWORDS = {
     "hr",
@@ -165,34 +193,58 @@ EXTERNAL_ORGANIZATION_PATTERNS = [
     re.compile(r"\bcompare\b.*\b(company|companies|employer|policy|policies)\b", re.I),
 ]
 
+POLICY_SOURCE_ROUTES = [
+    (("work from home", "wfh", "hybrid", "full remote", "ad-hoc wfh", "emergency wfh"), "03_Work_From_Home_Policy.pdf"),
+    (("earned leave", "sick leave", "maternity leave", "paternity leave", "leave"), "02_Leave_Policy.pdf"),
+    (("performance review", "annual performance review", "apr", "pip", "promotion", "rating"), "05_Performance_Review_Policy.pdf"),
+    (("salary", "payroll", "ctc", "bonus", "insurance", "benefit", "provident fund", "gratuity", "esop"), "06_Compensation_and_Benefits_Policy.pdf"),
+    (("travel", "expense", "reimbursement", "per diem"), "10_Travel_and_Expense_Policy.pdf"),
+    (("onboarding", "probation", "notice period", "resignation", "separation", "full and final"), "09_Onboarding_and_Separation_Policy.pdf"),
+    (("sexual harassment", "posh", "icc"), "08_Prevention_of_Sexual_Harassment_Policy.pdf"),
+    (("data security", "password", "device", "laptop", "vpn"), "07_IT_and_Data_Security_Policy.pdf"),
+    (("code of conduct", "disciplinary", "ethics", "conflict of interest"), "04_Code_of_Conduct.pdf"),
+]
+
 
 def answer_style_instruction(question: str) -> str:
     """Return concise answer-format guidance based on question intent."""
     q = clean_text(question).lower()
+    completeness = (
+        " Identify every requested part of the question and answer each part explicitly."
+        if " and " in q or q.count("?") > 1
+        else ""
+    )
+
+    if re.search(r"\b(timeline|schedule|stages?|steps?|process|procedure)\b", q):
+        return (
+            "Use numbered steps in chronological order. Include every stage, date, deadline, or owner "
+            "requested by the question, using only facts stated in the context." + completeness
+        )
 
     if re.search(r"\b(how many|how much)\b", q) or re.search(r"\bdays?\b", q):
         return (
             "Start with the exact number, amount, or day count from the context. "
-            "Then add only the condition or eligibility rule needed to interpret it."
+            "Then add only the condition or eligibility rule needed to interpret it." + completeness
         )
 
     if re.search(r"\b(can i|can we|am i|are we|eligible|allowed|permitted|qualify|entitled)\b", q):
         return (
             "Start with Yes or No when the context supports it. "
-            "Immediately state the exact condition, exception, or approval requirement from the context."
+            "Immediately state the exact condition, exception, or approval requirement from the context." + completeness
         )
 
     if re.search(r"\b(how to|process|procedure|apply|claim|request|submit|report|file)\b", q):
         return (
-            "Use numbered steps. Keep each step short and include only actions stated in the context."
+            "Use numbered steps. Keep each step short and include only actions stated in the context." + completeness
         )
 
     if re.search(r"\b(what is|what are|define|definition|meaning)\b", q):
         return (
             "Give a direct definition first. Add only one short sentence for scope, eligibility, or conditions if needed."
+            + completeness
         )
 
-    return "Answer directly in 1-3 short sentences using only the relevant policy facts."
+    return "Answer directly using only the relevant policy facts." + completeness
 
 
 @dataclass
@@ -206,7 +258,7 @@ class HRRagConfig:
     llm_provider: str = "auto"
     chunk_size: int = 700
     chunk_overlap: int = 150
-    retrieval_k: int = 10
+    retrieval_k: int = 6
     fetch_k: int = 48
     temperature: float = 0.0
     max_context_chars_per_chunk: int = 1800
@@ -433,7 +485,8 @@ class HRRagPipeline:
                 reason=reason,
             )
 
-        docs = self.retrieve(question)
+        grounded_question = normalize_company_aliases(question)
+        docs = self.retrieve(grounded_question)
         if not docs:
             return HRRagResponse(
                 answer="I could not find this information in the Zyro Dynamics HR policy documents.",
@@ -449,14 +502,14 @@ class HRRagPipeline:
         critique_rating = None
 
         if self.llm is None:
-            answer = self._extractive_answer(question, docs)
+            answer = self._extractive_answer(grounded_question, docs)
         else:
-            answer = self._llm_answer(question, docs, context, chat_history or [])
+            answer = self._llm_answer(grounded_question, docs, context, chat_history or [])
             should_refine = self.config.enable_self_critique and (
                 force_refine or avg_confidence < self.config.critique_confidence_threshold
             )
             if should_refine:
-                answer, critique_rating = self._self_critique(question, context, answer)
+                answer, critique_rating = self._self_critique(grounded_question, context, answer)
                 refined = True
 
         if self.config.append_source_block:
@@ -504,15 +557,29 @@ class HRRagPipeline:
             ],
             rrf_k=self.config.rrf_k,
         )
+        source_hints = infer_policy_source_hints(question)
+        if source_hints:
+            fused.sort(
+                key=lambda item: (
+                    str(item[0].metadata.get("source_file", item[0].metadata.get("source", ""))) not in source_hints,
+                    -query_doc_overlap(question, item[0]),
+                    -item[1],
+                )
+            )
+        if source_hints and needs_adjacent_context(question):
+            fused = expand_with_adjacent_policy_chunks(fused, self.chunks, source_hints)
 
         selected: List[Document] = []
         source_counts: Dict[str, int] = defaultdict(int)
+        source_chunk_limit = self.config.max_chunks_per_source
+        if needs_adjacent_context(question):
+            source_chunk_limit = max(source_chunk_limit, 3)
         for retrieval_rank, (doc, score, confidence, methods) in enumerate(fused, start=1):
             if confidence < self.config.min_confidence and len(selected) >= self.config.min_retrieved_chunks:
                 continue
             source = str(doc.metadata.get("source_file", doc.metadata.get("source", "unknown")))
             if (
-                source_counts[source] >= self.config.max_chunks_per_source
+                source_counts[source] >= source_chunk_limit
                 and len(selected) >= self.config.min_retrieved_chunks
             ):
                 continue
@@ -591,6 +658,12 @@ class HRRagPipeline:
                         "questions using only the provided policy context.\n"
                         "Rules:\n"
                         "- Follow the answer style instruction exactly.\n"
+                        "- Silently identify every requested part of the question before answering, and ensure "
+                        "the final answer covers every supported part.\n"
+                        "- The challenge corpus uses Acrux Dynamics and Zyro Dynamics interchangeably. Treat "
+                        "those two names as the same company only for answers grounded in this context.\n"
+                        "- Company-wide policy facts such as salary bands, grade ranges, and benefit tables are "
+                        "allowed. Do not reveal or infer any specific employee's private compensation or records.\n"
                         "- Keep the answer short, direct, and professional.\n"
                         "- Prioritize the lowest relevance-rank chunks that directly answer the question. "
                         "Ignore retrieved text about unrelated policies.\n"
@@ -677,7 +750,10 @@ class HRRagPipeline:
                     "system",
                     (
                         "You are a strict HR RAG answer reviewer. Check the draft only against the supplied "
-                        "policy context. Do not add unsupported facts. Return exactly two sections:\n"
+                        "policy context. Verify that every requested part of the question is answered. "
+                        "The corpus uses Acrux Dynamics and Zyro Dynamics interchangeably. Company-wide policy "
+                        "facts such as salary bands and benefit tables are allowed; private individual records are not. "
+                        "Do not add unsupported facts. Return exactly two sections:\n"
                         "RATING: COMPLETE, PARTIAL, or MISSING\n"
                         "REFINED ANSWER: follow the answer style instruction exactly. Keep exact policy "
                         "terms, numbers, dates, and conditions. If support is missing, use exactly: "
@@ -885,7 +961,7 @@ def build_chat_model(provider: str = "auto", temperature: float = 0.0):
         from langchain_groq import ChatGroq
 
         return ChatGroq(
-            model=os.getenv("GROQ_MODEL", "llama-3.1-8b-instant"),
+            model=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
             temperature=temperature,
         )
     if selected == "openai":
@@ -1010,6 +1086,79 @@ def tokenize(text: str) -> List[str]:
 def clean_text(text: str) -> str:
     without_controls = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", " ", text or "")
     return re.sub(r"\s+", " ", without_controls.strip())
+
+
+def normalize_company_aliases(text: str) -> str:
+    """Normalize the competition's legacy company alias to the policy corpus name."""
+    return re.sub(r"\bAcrux Dynamics\b", "Zyro Dynamics", text or "", flags=re.I)
+
+
+def infer_policy_source_hints(question: str) -> set[str]:
+    normalized = clean_text(question).lower()
+    return {
+        source_file
+        for terms, source_file in POLICY_SOURCE_ROUTES
+        if any(term in normalized for term in terms)
+    }
+
+
+def query_doc_overlap(question: str, doc: Document) -> int:
+    query_terms = set(tokenize(question)) - QUERY_STOPWORDS
+    return len(query_terms & set(tokenize(doc.page_content)))
+
+
+def needs_adjacent_context(question: str) -> bool:
+    normalized = clean_text(question).lower()
+    return " and " in normalized or bool(
+        re.search(r"\b(timeline|schedule|stages?|steps?|process|procedure)\b", normalized)
+    )
+
+
+def expand_with_adjacent_policy_chunks(
+    ranked: Sequence[Tuple[Document, float, float, List[str]]],
+    all_chunks: Sequence[Document],
+    source_hints: set[str],
+) -> List[Tuple[Document, float, float, List[str]]]:
+    if not ranked:
+        return []
+
+    primary = next(
+        (
+            item
+            for item in ranked
+            if str(item[0].metadata.get("source_file", item[0].metadata.get("source", ""))) in source_hints
+        ),
+        None,
+    )
+    if primary is None:
+        return list(ranked)
+
+    primary_doc, score, confidence, _methods = primary
+    source = str(primary_doc.metadata.get("source_file", primary_doc.metadata.get("source", "")))
+    try:
+        chunk_id = int(primary_doc.metadata.get("chunk_id"))
+    except (TypeError, ValueError):
+        return list(ranked)
+
+    chunk_lookup = {
+        (
+            str(doc.metadata.get("source_file", doc.metadata.get("source", ""))),
+            int(doc.metadata.get("chunk_id")),
+        ): doc
+        for doc in all_chunks
+        if str(doc.metadata.get("chunk_id", "")).isdigit()
+    }
+    adjacent = [
+        chunk_lookup[(source, neighbor_id)]
+        for neighbor_id in (chunk_id - 1, chunk_id + 1)
+        if (source, neighbor_id) in chunk_lookup
+    ]
+    adjacent_keys = {doc_key(doc) for doc in adjacent}
+    remainder = [item for item in ranked if doc_key(item[0]) not in adjacent_keys and item is not primary]
+    expanded = [primary]
+    expanded.extend((doc, score * 0.99, confidence, ["adjacent_context"]) for doc in adjacent)
+    expanded.extend(remainder)
+    return expanded
 
 
 def split_sentences(text: str) -> Iterable[str]:

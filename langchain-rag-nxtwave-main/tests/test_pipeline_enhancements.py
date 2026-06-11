@@ -13,7 +13,12 @@ from hr_rag.pipeline import (
     InMemoryVectorStore,
     LocalHashEmbeddings,
     answer_style_instruction,
+    expand_with_adjacent_policy_chunks,
+    infer_policy_source_hints,
     is_vague_query,
+    needs_adjacent_context,
+    normalize_company_aliases,
+    query_doc_overlap,
     weighted_reciprocal_rank_fusion,
 )
 from evaluate_hr_rag import strip_sources
@@ -52,10 +57,42 @@ class PipelineEnhancementTests(unittest.TestCase):
         self.assertIn("exact number", answer_style_instruction("How many sick leave days are available?"))
         self.assertIn("numbered steps", answer_style_instruction("How to claim reimbursement?"))
         self.assertIn("Yes or No", answer_style_instruction("Can I work from home?"))
+        self.assertIn("every stage", answer_style_instruction("What is the APR timeline?"))
+        self.assertIn("every requested part", answer_style_instruction("What is required and by when?"))
         self.assertEqual(
             strip_sources("Employees get 10 days [12 from hr-policy.pdf].\n\nSources: [12 from hr-policy.pdf]"),
             "Employees get 10 days.",
         )
+
+    def test_company_alias_and_policy_source_routing(self):
+        self.assertEqual(
+            normalize_company_aliases("What is the leave policy at Acrux Dynamics?"),
+            "What is the leave policy at Zyro Dynamics?",
+        )
+        self.assertEqual(
+            infer_policy_source_hints("Who is eligible for hybrid WFH?"),
+            {"03_Work_From_Home_Policy.pdf"},
+        )
+        self.assertGreater(
+            query_doc_overlap("What is the L4 bonus target?", Document(page_content="L4 bonus target is 10%.")),
+            query_doc_overlap("What is the L4 bonus target?", Document(page_content="General employee benefits.")),
+        )
+        self.assertTrue(needs_adjacent_context("Who is eligible and what arrangements are available?"))
+        self.assertTrue(needs_adjacent_context("What is the APR timeline?"))
+        self.assertFalse(needs_adjacent_context("How many sick leave days are available?"))
+
+    def test_adjacent_policy_chunks_expand_split_process_context(self):
+        docs = [
+            Document(page_content="Stage one", metadata={"source_file": "process.pdf", "chunk_id": 10}),
+            Document(page_content="Stage two", metadata={"source_file": "process.pdf", "chunk_id": 11}),
+            Document(page_content="Stage three", metadata={"source_file": "process.pdf", "chunk_id": 12}),
+        ]
+        expanded = expand_with_adjacent_policy_chunks(
+            [(docs[1], 1.0, 0.9, ["bm25"])],
+            docs,
+            {"process.pdf"},
+        )
+        self.assertEqual([doc.metadata["chunk_id"] for doc, *_rest in expanded], [11, 10, 12])
 
     def test_competition_out_of_scope_guardrails(self):
         config = HRRagConfig(retrieval_k=2)

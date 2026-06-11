@@ -19,10 +19,12 @@ class CompetitionSubmissionTests(unittest.TestCase):
     def test_link_validation_matches_competition_contract(self):
         validate_links(
             "https://zyro-hr-helpdesk.streamlit.app",
-            "https://smith.langchain.com/public/test-trace/r",
+            "https://smith.langchain.com/public/7d409145-121a-4bd1-b34d-efcbe8fd423e/r",
         )
         with self.assertRaises(ValueError):
-            validate_links("http://localhost:8501", "https://smith.langchain.com/public/test-trace/r")
+            validate_links("http://localhost:8501", "https://smith.langchain.com/public/7d409145-121a-4bd1-b34d-efcbe8fd423e/r")
+        with self.assertRaises(ValueError):
+            validate_links("https://your-real-app.streamlit.app", "https://smith.langchain.com/public/your-real-trace/r")
 
 
 if __name__ == "__main__":

@@ -18,6 +18,13 @@ from hr_rag import HRRagConfig, HRRagPipeline
 
 STREAMLIT_PATTERN = re.compile(r"^https://.+\.streamlit\.app(/.*)?$", re.IGNORECASE)
 LANGSMITH_PATTERN = re.compile(r"^https://smith\.langchain\.com/.+", re.IGNORECASE)
+PLACEHOLDER_LINK_MARKERS = ("your-", "your_", "placeholder", "example", "test-trace", "replace-me")
+REFUSAL_MARKERS = (
+    "i can only answer",
+    "i could not find this information",
+    "i cannot answer",
+    "not available in the",
+)
 REQUIRED_COLUMNS = [
     "question_id",
     "question_enc",
@@ -85,12 +92,23 @@ def extract_competition_questions(starter_notebook: str) -> Tuple[Fernet, List[T
 
 def validate_links(streamlit_link: str, langsmith_link: str) -> None:
     errors = []
+    normalized_streamlit = streamlit_link.strip().lower()
+    normalized_langsmith = langsmith_link.strip().lower()
     if not STREAMLIT_PATTERN.match(streamlit_link.strip()):
         errors.append("Invalid Streamlit URL. Expected https://<app>.streamlit.app")
     if not LANGSMITH_PATTERN.match(langsmith_link.strip()):
         errors.append("Invalid LangSmith URL. Expected https://smith.langchain.com/...")
+    if any(marker in normalized_streamlit for marker in PLACEHOLDER_LINK_MARKERS):
+        errors.append("Streamlit URL still contains a placeholder value.")
+    if any(marker in normalized_langsmith for marker in PLACEHOLDER_LINK_MARKERS):
+        errors.append("LangSmith URL still contains a placeholder value.")
     if errors:
         raise ValueError("\n".join(errors))
+
+
+def is_refusal(answer: str) -> bool:
+    normalized = answer.strip().lower()
+    return any(marker in normalized for marker in REFUSAL_MARKERS)
 
 
 def validate_official_corpus(docs_path: str) -> None:
@@ -150,6 +168,13 @@ def main() -> None:
         clean_answer = strip_sources(response.answer)
         if not clean_answer:
             raise ValueError("%s produced an empty answer." % question_id)
+        if index <= 10 and (response.blocked or is_refusal(clean_answer)):
+            raise ValueError(
+                "%s is in scope but produced a refusal. Review retrieval and generation. Answer: %s"
+                % (question_id, clean_answer)
+            )
+        if index >= 11 and not response.blocked:
+            raise ValueError("%s is out of scope but was not blocked by the guardrail." % question_id)
 
         rows.append(
             {
