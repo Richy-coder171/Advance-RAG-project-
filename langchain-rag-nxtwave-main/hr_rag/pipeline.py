@@ -504,13 +504,17 @@ class HRRagPipeline:
         if self.llm is None:
             answer = self._extractive_answer(grounded_question, docs)
         else:
-            answer = self._llm_answer(grounded_question, docs, context, chat_history or [])
-            should_refine = self.config.enable_self_critique and (
-                force_refine or avg_confidence < self.config.critique_confidence_threshold
-            )
-            if should_refine:
-                answer, critique_rating = self._self_critique(grounded_question, context, answer)
-                refined = True
+            try:
+                answer = self._llm_answer(grounded_question, docs, context, chat_history or [])
+                should_refine = self.config.enable_self_critique and (
+                    force_refine or avg_confidence < self.config.critique_confidence_threshold
+                )
+                if should_refine:
+                    answer, critique_rating = self._self_critique(grounded_question, context, answer)
+                    refined = True
+            except Exception:
+                answer = self._extractive_answer(grounded_question, docs)
+                critique_rating = "EXTRACTIVE_FALLBACK"
 
         if self.config.append_source_block:
             answer = append_citation_block(answer, sources)
@@ -900,6 +904,8 @@ def build_vectorstore(
     db_path: Path,
     collection_name: str,
 ):
+    if isinstance(embeddings, LocalHashEmbeddings):
+        return InMemoryVectorStore.from_documents(chunks, embeddings)
     if Chroma is not None:
         try:
             return Chroma.from_documents(
@@ -919,6 +925,8 @@ def load_vectorstore_or_memory(
     db_path: Path,
     collection_name: str,
 ):
+    if isinstance(embeddings, LocalHashEmbeddings):
+        return InMemoryVectorStore.from_documents(chunks, embeddings)
     if Chroma is not None and db_path.exists():
         try:
             return Chroma(

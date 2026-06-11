@@ -92,7 +92,7 @@ def make_config():
         min_confidence=float(st.session_state.get("min_confidence", 0.35)),
         max_chunks_per_source=int(st.session_state.get("max_chunks_per_source", 2)),
         enable_hyde=bool(st.session_state.get("enable_hyde", True)),
-        enable_self_critique=bool(st.session_state.get("enable_self_critique", True)),
+        enable_self_critique=bool(st.session_state.get("enable_self_critique", False)),
         critique_confidence_threshold=float(st.session_state.get("critique_confidence_threshold", 0.65)),
         append_source_block=bool(st.session_state.get("append_source_block", True)),
     )
@@ -145,7 +145,7 @@ with st.sidebar:
         "Conditional HyDE", value=bool(st.session_state.get("enable_hyde", True))
     )
     st.session_state.enable_self_critique = st.toggle(
-        "Low-confidence refinement", value=bool(st.session_state.get("enable_self_critique", True))
+        "Low-confidence refinement", value=bool(st.session_state.get("enable_self_critique", False))
     )
     st.session_state.critique_confidence_threshold = st.slider(
         "Refinement threshold",
@@ -213,16 +213,24 @@ with left:
 
             with st.chat_message("assistant"):
                 with st.spinner("Searching Zyro policy documents..."):
-                    response = pipeline.answer(user_input, chat_history=history_pairs)
-                st.markdown(response.answer)
+                    try:
+                        response = pipeline.answer(user_input, chat_history=history_pairs)
+                    except Exception as exc:
+                        response = None
+                        st.error("The answer service had a temporary problem. Please try the question again.")
+                        with st.expander("Technical details"):
+                            st.exception(exc)
+                if response is not None:
+                    st.markdown(response.answer)
 
-            st.session_state.messages.append({"role": "assistant", "content": response.answer})
-            st.session_state.last_sources = response.sources
-            st.session_state.last_run = {
-                "confidence": response.avg_confidence,
-                "hyde": response.used_hyde,
-                "refined": response.refined,
-            }
+            if response is not None:
+                st.session_state.messages.append({"role": "assistant", "content": response.answer})
+                st.session_state.last_sources = response.sources
+                st.session_state.last_run = {
+                    "confidence": response.avg_confidence,
+                    "hyde": response.used_hyde,
+                    "refined": response.refined,
+                }
 
 with right:
     st.subheader("Retrieved Sources")

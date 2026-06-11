@@ -134,6 +134,17 @@ class PipelineEnhancementTests(unittest.TestCase):
         self.assertIn("Sources:", response.answer)
         self.assertIn("[0 from onboarding.md]", response.answer)
 
+    def test_llm_failure_falls_back_to_extractive_answer(self):
+        llm = FakeListChatModel(responses=[])
+        config = HRRagConfig(retrieval_k=2, enable_hyde=False, enable_self_critique=False)
+        vectorstore = InMemoryVectorStore.from_documents(self.docs, LocalHashEmbeddings())
+        pipeline = HRRagPipeline(config, vectorstore, self.docs, llm=llm)
+
+        response = pipeline.answer("What should employees do for onboarding?")
+
+        self.assertEqual(response.critique_rating, "EXTRACTIVE_FALLBACK")
+        self.assertIn("contact HR", response.answer)
+
 
 if __name__ == "__main__":
     unittest.main()
