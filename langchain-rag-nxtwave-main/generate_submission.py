@@ -7,7 +7,7 @@ from typing import Optional
 
 import pandas as pd
 
-from hr_rag import HRRagConfig, HRRagPipeline
+from hr_rag import HRRagConfig, HRRagPipeline, validate_official_corpus
 
 
 QUESTION_COLUMNS = ["question", "query", "prompt", "employee_question", "Question", "Query"]
@@ -92,6 +92,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    validate_official_corpus(args.docs_path)
     questions_df = pd.read_csv(args.questions)
     question_column = infer_question_column(questions_df, args.question_column)
     id_column = infer_id_column(questions_df, args.id_column)

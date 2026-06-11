@@ -13,7 +13,7 @@ from hr_rag import HRRagConfig, HRRagPipeline
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Tune HR RAG chunking and retrieval settings.")
-    parser.add_argument("--docs-path", default="hr_docs/temp_policies", help="Folder containing HR policy docs.")
+    parser.add_argument("--docs-path", default="hr_docs/official", help="Folder containing the official HR policy PDFs.")
     parser.add_argument("--validation-file", default="eval/hr_validation_sample.jsonl", help="JSONL or CSV validation file.")
     parser.add_argument("--output-dir", default="eval/tuning", help="Directory for tuning outputs.")
     parser.add_argument("--embedding-provider", default="hash", choices=["auto", "openai", "ollama", "hash"])

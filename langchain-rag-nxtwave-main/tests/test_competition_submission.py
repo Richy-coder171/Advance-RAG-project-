@@ -1,10 +1,12 @@
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from generate_competition_submission import (
     extract_competition_questions,
     validate_links,
-    validate_official_corpus,
 )
+from hr_rag import validate_official_corpus
 
 
 class CompetitionSubmissionTests(unittest.TestCase):
@@ -15,6 +17,12 @@ class CompetitionSubmissionTests(unittest.TestCase):
 
     def test_official_corpus_has_exactly_eleven_pdfs(self):
         validate_official_corpus("hr_docs/official")
+
+    def test_official_corpus_rejects_other_data(self):
+        with TemporaryDirectory() as temp_dir:
+            Path(temp_dir, "unrelated-policy.pdf").write_bytes(b"not official")
+            with self.assertRaises(ValueError):
+                validate_official_corpus(temp_dir)
 
     def test_link_validation_matches_competition_contract(self):
         validate_links(

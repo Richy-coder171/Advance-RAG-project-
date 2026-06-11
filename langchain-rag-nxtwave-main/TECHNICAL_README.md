@@ -267,9 +267,9 @@ The official competition question split is covered by guardrail tests: Q01-Q10 a
 | `streamlit_hr_helpdesk.py` | Streamlit chatbot UI |
 | `generate_submission.py` | Kaggle batch submission generator |
 | `evaluate_hr_rag.py` | HR validation/evaluation runner |
-| `eval/hr_validation_sample.jsonl` | Starter validation set |
-| `hr_docs/README.md` | Policy document folder instructions |
-| `hr_docs/temp_policies/` | Temporary HR policy documents for local testing |
+| `eval/hr_validation_sample.jsonl` | Validation set grounded in the official corpus |
+| `hr_docs/README.md` | Official corpus integrity instructions |
+| `hr_docs/official/` | Exact 11 competition PDFs, validated by SHA-256 |
 | `.env.example` | Safe environment variable template |
 | `.gitignore` | Prevents secrets, vector stores, and generated outputs from being committed |
 

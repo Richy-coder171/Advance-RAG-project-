@@ -60,7 +60,7 @@ class PipelineEnhancementTests(unittest.TestCase):
         self.assertIn("every stage", answer_style_instruction("What is the APR timeline?"))
         self.assertIn("every requested part", answer_style_instruction("What is required and by when?"))
         self.assertEqual(
-            strip_sources("Employees get 10 days [12 from hr-policy.pdf].\n\nSources: [12 from hr-policy.pdf]"),
+            strip_sources("Employees get 10 days [12 from 02_Leave_Policy.pdf].\n\nSources: [12 from 02_Leave_Policy.pdf]"),
             "Employees get 10 days.",
         )
 

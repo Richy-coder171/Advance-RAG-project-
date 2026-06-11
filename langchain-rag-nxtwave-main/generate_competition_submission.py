@@ -13,7 +13,7 @@ from typing import List, Sequence, Tuple
 from cryptography.fernet import Fernet
 
 from evaluate_hr_rag import strip_sources
-from hr_rag import HRRagConfig, HRRagPipeline
+from hr_rag import HRRagConfig, HRRagPipeline, validate_official_corpus
 
 
 STREAMLIT_PATTERN = re.compile(r"^https://.+\.streamlit\.app(/.*)?$", re.IGNORECASE)
@@ -109,13 +109,6 @@ def validate_links(streamlit_link: str, langsmith_link: str) -> None:
 def is_refusal(answer: str) -> bool:
     normalized = answer.strip().lower()
     return any(marker in normalized for marker in REFUSAL_MARKERS)
-
-
-def validate_official_corpus(docs_path: str) -> None:
-    root = Path(docs_path)
-    pdfs = sorted(root.glob("*.pdf")) if root.exists() else []
-    if len(pdfs) != 11:
-        raise ValueError("Official corpus must contain exactly 11 PDF files; found %s in %s." % (len(pdfs), root))
 
 
 def validate_submission(path: Path) -> None:

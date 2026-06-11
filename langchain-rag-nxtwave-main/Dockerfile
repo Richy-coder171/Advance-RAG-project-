@@ -14,7 +14,7 @@ COPY hr_rag/ ./hr_rag/
 COPY hr_docs/ ./hr_docs/
 COPY competition/ ./competition/
 COPY eval/ ./eval/
-COPY README.md TECHNICAL_README.md EVALUATION_REPORT.md ./
+COPY README.md TECHNICAL_README.md ./
 
 EXPOSE 8501
 

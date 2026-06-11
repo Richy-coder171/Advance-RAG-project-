@@ -20,6 +20,8 @@ from langchain_core.prompts import ChatPromptTemplate, PromptTemplate
 from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
+from .official_corpus import validate_official_corpus
+
 try:
     from langchain.chains.combine_documents import create_stuff_documents_chain
 except Exception:  # pragma: no cover - optional in older/minimal installs
@@ -444,6 +446,7 @@ class HRRagPipeline:
     @classmethod
     def from_config(cls, config: Optional[HRRagConfig] = None, rebuild: bool = False) -> "HRRagPipeline":
         cfg = config or HRRagConfig()
+        validate_official_corpus(cfg.docs_path)
         embeddings = build_embeddings(cfg.embedding_provider)
         db_path = Path(cfg.db_path)
         chunks_path = db_path / "chunks.jsonl"

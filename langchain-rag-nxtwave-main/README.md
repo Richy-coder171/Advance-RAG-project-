@@ -13,10 +13,9 @@ This project is set up for the Kaggle InClass HR Help Desk assignment. It builds
 - `tune_hr_rag.py`: grid tuner for chunking, hybrid retrieval weights, top-k, and fetch-k.
 - `hr_docs/official/`: the official 11 competition HR policy PDFs.
 - `competition/`: unchanged starter notebook, sample submission, and competition instructions.
-- `eval/hr_validation_sample.jsonl`: small starter validation set for local testing.
+- `eval/hr_validation_sample.jsonl`: small validation set grounded only in the official PDFs.
 - `.env.example`: safe template for API keys and tracing settings.
 - `TECHNICAL_README.md`: architecture, LangChain components, LLM options, vector database, chain design, and visual diagrams.
-- `EVALUATION_REPORT.md`: mapped evaluation findings and remaining competition-readiness work.
 
 ## Setup
 
@@ -51,9 +50,7 @@ The official Zyro Dynamics policy files are in `hr_docs/official/`.
 
 Supported formats: `.md`, `.txt`, `.pdf`, `.docx`, `.csv`, `.json`.
 
-Temporary test policy files remain in `hr_docs/temp_policies/` and are not used by the deployed app or official submission generator.
-
-Do not add fabricated policy text for the competition run. The answer prompt is designed to say when the policy documents do not contain an answer.
+The pipeline validates the exact filenames and SHA-256 hashes of all 11 PDFs before loading them. It rejects missing, modified, or additional files.
 
 ## Run The Streamlit Chatbot
 
@@ -114,7 +111,7 @@ Example local command:
 
 ```bash
 python generate_submission.py ^
-  --docs-path hr_docs ^
+  --docs-path hr_docs/official ^
   --questions test.csv ^
   --sample-submission sample_submission.csv ^
   --output submissions/submission.csv ^
@@ -135,14 +132,14 @@ python generate_submission.py \
 If no model API is available:
 
 ```bash
-python generate_submission.py --docs-path hr_docs --questions test.csv --output submission.csv --embedding-provider hash --llm-provider extractive --rebuild
+python generate_submission.py --docs-path hr_docs/official --questions test.csv --output submission.csv --embedding-provider hash --llm-provider extractive --rebuild
 ```
 
 Useful enhanced-pipeline flags:
 
 ```bash
 python generate_submission.py \
-  --docs-path hr_docs \
+  --docs-path hr_docs/official \
   --questions test.csv \
   --output submission.csv \
   --chunk-size 700 \
@@ -164,7 +161,7 @@ Run the starter validation set:
 
 ```bash
 python evaluate_hr_rag.py ^
-  --docs-path hr_docs/temp_policies ^
+  --docs-path hr_docs/official ^
   --validation-file eval/hr_validation_sample.jsonl ^
   --output-dir eval/results ^
   --embedding-provider hash ^
@@ -185,7 +182,7 @@ Run the required grid over chunking, top-k, fetch-k, and hybrid weights:
 
 ```bash
 python tune_hr_rag.py ^
-  --docs-path hr_docs/temp_policies ^
+  --docs-path hr_docs/official ^
   --validation-file eval/hr_validation_sample.jsonl ^
   --output-dir eval/tuning ^
   --embedding-provider hash ^
@@ -216,12 +213,4 @@ Tune against a small validation set before submitting:
 - Prefer grounded answers over broad explanations. The competition will likely reward answers that match the internal policy text.
 - Keep guardrails strict for non-HR, sensitive personal data, credentials, and unsupported questions.
 
-## Legacy Reference Files
-
-The previous API documentation assistant files are kept only as learning/reference material:
-
-- `streamlit_api_assistant.py`
-- `Handson_lab1.ipynb`
-- `api_docs/`
-
-The production path for this assignment is the HR pipeline: `streamlit_hr_helpdesk.py`, `hr_rag/`, `generate_submission.py`, and `evaluate_hr_rag.py`.
+The production path for this assignment is the official-corpus HR pipeline: `streamlit_hr_helpdesk.py`, `hr_rag/`, `generate_competition_submission.py`, and `hr_docs/official/`.

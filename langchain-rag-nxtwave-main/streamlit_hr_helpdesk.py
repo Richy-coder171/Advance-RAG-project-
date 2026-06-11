@@ -9,6 +9,7 @@ import streamlit as st
 st.set_page_config(page_title="Zyro HR Help Desk", layout="wide")
 
 APP_DIR = Path(__file__).resolve().parent
+OFFICIAL_DOCS_PATH = "hr_docs/official"
 
 
 def resolve_app_path(path_value: str) -> str:
@@ -79,7 +80,7 @@ def make_config():
     from hr_rag import HRRagConfig
 
     return HRRagConfig(
-        docs_path=resolve_app_path(st.session_state.get("docs_path", "hr_docs/official")),
+        docs_path=resolve_app_path(OFFICIAL_DOCS_PATH),
         db_path=resolve_runtime_path(st.session_state.get("db_path", "chroma_zyro_official_store")),
         embedding_provider=st.session_state.get("embedding_provider", "auto"),
         llm_provider=st.session_state.get("llm_provider", "auto"),
@@ -112,9 +113,7 @@ def config_cache_key(cfg) -> str:
 
 with st.sidebar:
     st.title("Zyro HR")
-    st.session_state.docs_path = st.text_input(
-        "Policy docs folder", value=st.session_state.get("docs_path", "hr_docs/official")
-    )
+    st.caption("Policy corpus: official 11 Zyro Dynamics PDFs")
     st.session_state.db_path = st.text_input(
         "Vector DB folder", value=st.session_state.get("db_path", "chroma_zyro_official_store")
     )

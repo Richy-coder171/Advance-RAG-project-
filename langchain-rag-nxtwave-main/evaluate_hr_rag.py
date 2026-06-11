@@ -15,7 +15,7 @@ TOKEN_RE = re.compile(r"[a-zA-Z0-9_+-]+")
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Evaluate the Zyro HR RAG pipeline on a validation set.")
-    parser.add_argument("--docs-path", default="hr_docs/temp_policies", help="Folder containing HR policy docs.")
+    parser.add_argument("--docs-path", default="hr_docs/official", help="Folder containing the official HR policy PDFs.")
     parser.add_argument("--validation-file", default="eval/hr_validation_sample.jsonl", help="JSONL or CSV validation file.")
     parser.add_argument("--output-dir", default="eval/results", help="Directory for evaluation outputs.")
     parser.add_argument("--db-path", default="chroma_hr_eval_store", help="Vector DB folder for evaluation.")
