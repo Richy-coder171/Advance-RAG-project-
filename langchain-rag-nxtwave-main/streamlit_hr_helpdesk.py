@@ -7,6 +7,16 @@ import streamlit as st
 
 st.set_page_config(page_title="Zyro HR Help Desk", layout="wide")
 
+APP_DIR = Path(__file__).resolve().parent
+
+
+def resolve_app_path(path_value: str) -> str:
+    """Resolve user-facing relative paths from the deployed app directory."""
+    path = Path(path_value).expanduser()
+    if not path.is_absolute():
+        path = APP_DIR / path
+    return str(path.resolve())
+
 
 def load_streamlit_secrets() -> None:
     keys = [
@@ -60,8 +70,8 @@ def make_config():
     from hr_rag import HRRagConfig
 
     return HRRagConfig(
-        docs_path=st.session_state.get("docs_path", "hr_docs/official"),
-        db_path=st.session_state.get("db_path", "chroma_zyro_official_store"),
+        docs_path=resolve_app_path(st.session_state.get("docs_path", "hr_docs/official")),
+        db_path=resolve_app_path(st.session_state.get("db_path", "chroma_zyro_official_store")),
         embedding_provider=st.session_state.get("embedding_provider", "auto"),
         llm_provider=st.session_state.get("llm_provider", "auto"),
         chunk_size=int(st.session_state.get("chunk_size", 700)),
