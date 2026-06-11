@@ -1,5 +1,6 @@
 import json
 import os
+import tempfile
 from html import escape
 from pathlib import Path
 
@@ -15,6 +16,14 @@ def resolve_app_path(path_value: str) -> str:
     path = Path(path_value).expanduser()
     if not path.is_absolute():
         path = APP_DIR / path
+    return str(path.resolve())
+
+
+def resolve_runtime_path(path_value: str) -> str:
+    """Keep generated indexes outside Streamlit's watched source tree."""
+    path = Path(path_value).expanduser()
+    if not path.is_absolute():
+        path = Path(tempfile.gettempdir()) / path
     return str(path.resolve())
 
 
@@ -71,7 +80,7 @@ def make_config():
 
     return HRRagConfig(
         docs_path=resolve_app_path(st.session_state.get("docs_path", "hr_docs/official")),
-        db_path=resolve_app_path(st.session_state.get("db_path", "chroma_zyro_official_store")),
+        db_path=resolve_runtime_path(st.session_state.get("db_path", "chroma_zyro_official_store")),
         embedding_provider=st.session_state.get("embedding_provider", "auto"),
         llm_provider=st.session_state.get("llm_provider", "auto"),
         chunk_size=int(st.session_state.get("chunk_size", 700)),
