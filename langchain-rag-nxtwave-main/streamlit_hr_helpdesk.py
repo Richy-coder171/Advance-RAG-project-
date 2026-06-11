@@ -35,6 +35,7 @@ def load_streamlit_secrets() -> None:
         "LANGCHAIN_API_KEY",
         "LANGSMITH_API_KEY",
         "LANGCHAIN_PROJECT",
+        "LANGSMITH_PROJECT",
         "LANGCHAIN_TRACING_V2",
         "LANGSMITH_TRACING",
         "LLM_PROVIDER",
@@ -51,6 +52,7 @@ def load_streamlit_secrets() -> None:
         if value and not os.getenv(key):
             os.environ[key] = str(value)
     os.environ.setdefault("LANGCHAIN_PROJECT", "zyro-rag-challenge")
+    os.environ.setdefault("LANGSMITH_PROJECT", os.environ["LANGCHAIN_PROJECT"])
 
 
 load_streamlit_secrets()

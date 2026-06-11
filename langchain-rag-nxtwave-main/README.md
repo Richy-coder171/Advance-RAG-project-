@@ -72,6 +72,7 @@ Add these values in the Streamlit app's Secrets settings:
 GROQ_API_KEY = "your-groq-key"
 LANGCHAIN_API_KEY = "your-langsmith-key"
 LANGCHAIN_PROJECT = "zyro-rag-challenge"
+LANGSMITH_PROJECT = "zyro-rag-challenge"
 LANGCHAIN_TRACING_V2 = "true"
 LANGSMITH_TRACING = "true"
 LLM_PROVIDER = "groq"

@@ -19,6 +19,9 @@ from hr_rag.pipeline import (
     needs_adjacent_context,
     normalize_company_aliases,
     query_doc_overlap,
+    trace_answer_inputs,
+    trace_answer_output,
+    trace_retrieval_output,
     weighted_reciprocal_rank_fusion,
 )
 from evaluate_hr_rag import strip_sources
@@ -144,6 +147,26 @@ class PipelineEnhancementTests(unittest.TestCase):
 
         self.assertEqual(response.critique_rating, "EXTRACTIVE_FALLBACK")
         self.assertIn("contact HR", response.answer)
+
+    def test_langsmith_trace_payloads_are_concise_and_complete(self):
+        response = HRRagPipeline(
+            HRRagConfig(retrieval_k=2),
+            InMemoryVectorStore.from_documents(self.docs, LocalHashEmbeddings()),
+            self.docs,
+            llm=None,
+        ).answer("What should employees do for onboarding?")
+
+        answer_inputs = trace_answer_inputs(
+            {"self": object(), "question": "test", "chat_history": [("q", "a")], "force_refine": True}
+        )
+        answer_output = trace_answer_output(response)
+        retrieval_output = trace_retrieval_output(self.docs)
+
+        self.assertNotIn("self", answer_inputs)
+        self.assertEqual(answer_inputs["chat_history_turns"], 1)
+        self.assertIn("answer", answer_output)
+        self.assertIn("sources", answer_output)
+        self.assertEqual(retrieval_output[0]["source_file"], "onboarding.md")
 
 
 if __name__ == "__main__":

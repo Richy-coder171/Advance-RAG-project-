@@ -19,6 +19,7 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate, PromptTemplate
 from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langsmith import traceable
 
 from .official_corpus import validate_official_corpus
 
@@ -67,6 +68,10 @@ def load_environment() -> None:
     # LangSmith has used both env names across LangChain versions.
     if os.getenv("LANGCHAIN_API_KEY") and not os.getenv("LANGSMITH_API_KEY"):
         os.environ["LANGSMITH_API_KEY"] = os.getenv("LANGCHAIN_API_KEY", "")
+    if os.getenv("LANGCHAIN_PROJECT") and not os.getenv("LANGSMITH_PROJECT"):
+        os.environ["LANGSMITH_PROJECT"] = os.getenv("LANGCHAIN_PROJECT", "")
+    if os.getenv("LANGSMITH_PROJECT") and not os.getenv("LANGCHAIN_PROJECT"):
+        os.environ["LANGCHAIN_PROJECT"] = os.getenv("LANGSMITH_PROJECT", "")
 
 
 load_environment()
@@ -303,6 +308,44 @@ class HRRagResponse:
     critique_rating: Optional[str] = None
 
 
+def trace_answer_inputs(inputs: Dict[str, object]) -> Dict[str, object]:
+    history = inputs.get("chat_history") or []
+    return {
+        "question": inputs.get("question", ""),
+        "chat_history_turns": len(history) if isinstance(history, Sequence) else 0,
+        "force_refine": bool(inputs.get("force_refine", False)),
+    }
+
+
+def trace_answer_output(response: HRRagResponse) -> Dict[str, object]:
+    return {
+        "answer": response.answer,
+        "blocked": response.blocked,
+        "reason": response.reason,
+        "avg_confidence": response.avg_confidence,
+        "used_hyde": response.used_hyde,
+        "refined": response.refined,
+        "sources": response.sources,
+    }
+
+
+def trace_retrieval_inputs(inputs: Dict[str, object]) -> Dict[str, object]:
+    return {"question": inputs.get("question", "")}
+
+
+def trace_retrieval_output(docs: Sequence[Document]) -> List[Dict[str, object]]:
+    return [
+        {
+            "source_file": doc.metadata.get("source_file", doc.metadata.get("source", "unknown")),
+            "chunk_id": doc.metadata.get("chunk_id", "n/a"),
+            "retrieval_rank": doc.metadata.get("retrieval_rank", "n/a"),
+            "retrieval_confidence": doc.metadata.get("retrieval_confidence", 0.0),
+            "preview": clean_text(doc.page_content)[:400],
+        }
+        for doc in docs
+    ]
+
+
 class LocalHashEmbeddings(Embeddings):
     """Small offline embedding fallback.
 
@@ -473,6 +516,12 @@ class HRRagPipeline:
         llm = build_chat_model(cfg.llm_provider, cfg.temperature)
         return cls(cfg, vectorstore, chunks, llm=llm)
 
+    @traceable(
+        name="zyro_hr_rag_answer",
+        run_type="chain",
+        process_inputs=trace_answer_inputs,
+        process_outputs=trace_answer_output,
+    )
     def answer(
         self,
         question: str,
@@ -532,6 +581,12 @@ class HRRagPipeline:
             critique_rating=critique_rating,
         )
 
+    @traceable(
+        name="zyro_hr_policy_retrieval",
+        run_type="retriever",
+        process_inputs=trace_retrieval_inputs,
+        process_outputs=trace_retrieval_output,
+    )
     def retrieve(self, question: str) -> List[Document]:
         fetch_k = max(self.config.fetch_k, self.config.retrieval_k)
         vector_query, used_hyde = self._retrieval_query(question)

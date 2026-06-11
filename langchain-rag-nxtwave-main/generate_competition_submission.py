@@ -40,7 +40,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--starter-notebook", default="competition/Starter_Notebook.ipynb")
     parser.add_argument("--output", default="submissions/submission.csv")
     parser.add_argument("--streamlit-link", required=True)
-    parser.add_argument("--langsmith-link", required=True)
+    parser.add_argument("--langsmith-link", required=True, help="Publicly shared LangSmith project or trace URL.")
     parser.add_argument("--db-path", default="chroma_zyro_official_store")
     parser.add_argument("--embedding-provider", default="auto", choices=["auto", "openai", "ollama", "hash"])
     parser.add_argument("--llm-provider", default="auto", choices=["auto", "groq", "openai", "ollama", "extractive"])
@@ -137,6 +137,7 @@ def main() -> None:
         os.environ["LANGSMITH_TRACING"] = "false"
     else:
         os.environ["LANGCHAIN_PROJECT"] = "zyro-rag-challenge"
+        os.environ["LANGSMITH_PROJECT"] = "zyro-rag-challenge"
         os.environ["LANGCHAIN_TRACING_V2"] = "true"
         os.environ["LANGSMITH_TRACING"] = "true"
 
