@@ -200,6 +200,11 @@ EXTERNAL_ORGANIZATION_PATTERNS = [
     re.compile(r"\bcompare\b.*\b(company|companies|employer|policy|policies)\b", re.I),
 ]
 
+LEGAL_ADVICE_PATTERNS = [
+    re.compile(r"\b(legal advice|legal opinion|act as (?:my|a) lawyer)\b", re.I),
+    re.compile(r"\b(can|should)\s+i\s+(sue|file a lawsuit|take legal action)\b", re.I),
+]
+
 POLICY_SOURCE_ROUTES = [
     (("work from home", "wfh", "hybrid", "full remote", "ad-hoc wfh", "emergency wfh"), "03_Work_From_Home_Policy.pdf"),
     (("earned leave", "sick leave", "maternity leave", "paternity leave", "leave"), "02_Leave_Policy.pdf"),
@@ -216,28 +221,30 @@ POLICY_SOURCE_ROUTES = [
 def answer_style_instruction(question: str) -> str:
     """Return concise answer-format guidance based on question intent."""
     q = clean_text(question).lower()
+    is_multi_part = " and " in q or q.count("?") > 1
     completeness = (
-        " Identify every requested part of the question and answer each part explicitly."
-        if " and " in q or q.count("?") > 1
+        " Cover every requested part. Include the exact value, amount, "
+        "limit, date, deadline, eligibility rule, or condition for each part."
+        if is_multi_part
         else ""
     )
 
     if re.search(r"\b(timeline|schedule|stages?|steps?|process|procedure)\b", q):
         return (
             "Use numbered steps in chronological order. Include every stage, date, deadline, or owner "
-            "requested by the question, using only facts stated in the context." + completeness
+            "requested by the question. Use plain text only." + completeness
         )
 
     if re.search(r"\b(how many|how much)\b", q) or re.search(r"\bdays?\b", q):
         return (
-            "Start with the exact number, amount, or day count from the context. "
-            "Then add only the condition or eligibility rule needed to interpret it." + completeness
+            "State the exact number, amount, or day count from the context with its condition "
+            "in one or two sentences." + completeness
         )
 
     if re.search(r"\b(can i|can we|am i|are we|eligible|allowed|permitted|qualify|entitled)\b", q):
         return (
-            "Start with Yes or No when the context supports it. "
-            "Immediately state the exact condition, exception, or approval requirement from the context." + completeness
+            "Start with Yes or No when the context supports it, then state the eligibility rule, "
+            "condition, exception, or approval requirement directly in one or two sentences." + completeness
         )
 
     if re.search(r"\b(how to|process|procedure|apply|claim|request|submit|report|file)\b", q):
@@ -247,11 +254,11 @@ def answer_style_instruction(question: str) -> str:
 
     if re.search(r"\b(what is|what are|define|definition|meaning)\b", q):
         return (
-            "Give a direct definition first. Add only one short sentence for scope, eligibility, or conditions if needed."
-            + completeness
+            "Give a direct answer using the policy wording. Add only the scope, eligibility, or conditions "
+            "that the question asks for." + completeness
         )
 
-    return "Answer directly using only the relevant policy facts." + completeness
+    return "Answer directly in one to three sentences using only the relevant policy facts." + completeness
 
 
 @dataclass
@@ -263,22 +270,23 @@ class HRRagConfig:
     collection_name: str = "zyro_hr_policies"
     embedding_provider: str = "auto"
     llm_provider: str = "auto"
-    chunk_size: int = 700
+    chunk_size: int = 900
     chunk_overlap: int = 150
-    retrieval_k: int = 6
-    fetch_k: int = 48
+    retrieval_k: int = 8
+    fetch_k: int = 60
     temperature: float = 0.0
     max_context_chars_per_chunk: int = 1800
-    vector_weight: float = 0.6
-    keyword_weight: float = 0.4
+    vector_weight: float = 0.65
+    keyword_weight: float = 0.35
     rrf_k: int = 60
     min_confidence: float = 0.35
     min_retrieved_chunks: int = 2
     max_chunks_per_source: int = 2
     enable_hyde: bool = True
     enable_self_critique: bool = True
-    critique_confidence_threshold: float = 0.65
+    critique_confidence_threshold: float = 0.55
     append_source_block: bool = True
+    allow_extractive_fallback: bool = True
 
     def __post_init__(self) -> None:
         self.vector_weight = max(0.0, min(1.0, self.vector_weight))
@@ -538,7 +546,7 @@ class HRRagPipeline:
             )
 
         grounded_question = normalize_company_aliases(question)
-        docs = self.retrieve(grounded_question)
+        docs = self.retrieve(remove_company_aliases(question))
         if not docs:
             return HRRagResponse(
                 answer="I could not find this information in the Zyro Dynamics HR policy documents.",
@@ -565,6 +573,8 @@ class HRRagPipeline:
                     answer, critique_rating = self._self_critique(grounded_question, context, answer)
                     refined = True
             except Exception:
+                if not self.config.allow_extractive_fallback:
+                    raise
                 answer = self._extractive_answer(grounded_question, docs)
                 critique_rating = "EXTRACTIVE_FALLBACK"
 
@@ -630,6 +640,14 @@ class HRRagPipeline:
             )
         if source_hints and needs_adjacent_context(question):
             fused = expand_with_adjacent_policy_chunks(fused, self.chunks, source_hints)
+        if source_hints:
+            routed = [
+                item
+                for item in fused
+                if str(item[0].metadata.get("source_file", item[0].metadata.get("source", ""))) in source_hints
+            ]
+            if len(routed) >= self.config.min_retrieved_chunks:
+                fused = routed
 
         selected: List[Document] = []
         source_counts: Dict[str, int] = defaultdict(int)
@@ -716,26 +734,25 @@ class HRRagPipeline:
                 (
                     "system",
                     (
-                        "You are Zyro Dynamics HR Help Desk assistant. Answer employee HR policy "
-                        "questions using only the provided policy context.\n"
+                        "You are an HR policy assistant for Zyro Dynamics. Answer only from the retrieved "
+                        "policy excerpts supplied in the user message.\n"
                         "Rules:\n"
+                        "- Copy key policy phrases, numbers, dates, percentages, amounts, and named terms "
+                        "verbatim from the excerpts. Do not paraphrase them.\n"
+                        "- Answer every part of the question, but include no unasked background or general HR knowledge.\n"
+                        "- Use two to four concise sentences maximum, except when a complete requested timeline "
+                        "requires a numbered list.\n"
+                        "- If a question asks about a policy limit or carry-forward rule, include the directly stated "
+                        "consequence of exceeding that limit when it appears in the excerpts.\n"
                         "- Follow the answer style instruction exactly.\n"
-                        "- Silently identify every requested part of the question before answering, and ensure "
-                        "the final answer covers every supported part.\n"
                         "- The challenge corpus uses Acrux Dynamics and Zyro Dynamics interchangeably. Treat "
                         "those two names as the same company only for answers grounded in this context.\n"
                         "- Company-wide policy facts such as salary bands, grade ranges, and benefit tables are "
                         "allowed. Do not reveal or infer any specific employee's private compensation or records.\n"
-                        "- Keep the answer short, direct, and professional.\n"
-                        "- Prioritize the lowest relevance-rank chunks that directly answer the question. "
-                        "Ignore retrieved text about unrelated policies.\n"
-                        "- Keep policy terms, numbers, dates, limits, eligibility rules, conditions, "
-                        "and exceptions exactly as written in the context.\n"
-                        "- Do not add extra explanation, assumptions, outside policy knowledge, legal "
-                        "advice, or personal employee data.\n"
+                        "- Return only the final answer in plain text. Do not use markdown, label prefixes, citations, "
+                        "source lines, chunk IDs, reasoning, relevance ranks, or repeated facts.\n"
                         "- If the context does not contain the answer, return exactly: "
-                        "I could not find this information in the Zyro Dynamics HR policy documents.\n"
-                        "- Do not write a Sources section. The application adds citations separately."
+                        "I could not find this information in the Zyro Dynamics HR policy documents."
                     ),
                 ),
                 (
@@ -783,22 +800,34 @@ class HRRagPipeline:
 
     def _extractive_answer(self, question: str, docs: Sequence[Document]) -> str:
         sentences = []
-        query_terms = set(tokenize(question))
-        for doc in docs:
-            for sentence in split_sentences(doc.page_content):
-                overlap = len(query_terms & set(tokenize(sentence)))
+        query_terms = set(tokenize(question)) - QUERY_STOPWORDS
+        for doc_rank, doc in enumerate(docs):
+            for sentence_rank, sentence in enumerate(split_sentences(doc.page_content)):
+                sentence_terms = set(tokenize(sentence))
+                overlap = len(query_terms & sentence_terms)
                 if overlap:
-                    sentences.append((overlap, len(sentence), clean_text(sentence)))
+                    coverage = overlap / max(1, len(query_terms))
+                    exact_number_bonus = 0.35 if any(token[0].isdigit() for token in sentence_terms) else 0.0
+                    score = coverage * 4.0 + overlap + exact_number_bonus - (doc_rank * 0.05)
+                    sentences.append((score, doc_rank, sentence_rank, clean_text(sentence)))
         sentences.sort(key=lambda item: item[0], reverse=True)
         selected: List[str] = []
         seen = set()
-        for _score, _length, sentence in sentences:
+        normalized_question = clean_text(question).lower()
+        max_sentences = 2 if (
+            " and " in normalized_question
+            or normalized_question.count("?") > 1
+            or "maximum" in normalized_question
+            or "carry-forward" in normalized_question
+            or "carry forward" in normalized_question
+        ) else 1
+        for _score, _doc_rank, _sentence_rank, sentence in sentences:
             normalized = sentence.lower()
             if normalized in seen:
                 continue
             seen.add(normalized)
             selected.append(sentence)
-            if len(selected) >= 4:
+            if len(selected) >= max_sentences:
                 break
         if not selected:
             return "I could not find this information in the Zyro Dynamics HR policy documents."
@@ -812,15 +841,20 @@ class HRRagPipeline:
                     "system",
                     (
                         "You are a strict HR RAG answer reviewer. Check the draft only against the supplied "
-                        "policy context. Verify that every requested part of the question is answered. "
+                        "policy context. Preserve exact policy wording and answer only what the question asks. "
                         "The corpus uses Acrux Dynamics and Zyro Dynamics interchangeably. Company-wide policy "
                         "facts such as salary bands and benefit tables are allowed; private individual records are not. "
                         "Do not add unsupported facts. Return exactly two sections:\n"
                         "RATING: COMPLETE, PARTIAL, or MISSING\n"
-                        "REFINED ANSWER: follow the answer style instruction exactly. Keep exact policy "
-                        "terms, numbers, dates, and conditions. If support is missing, use exactly: "
-                        "I could not find this information in the Zyro Dynamics HR policy documents. "
-                        "Do not write a Sources section."
+                        "REFINED ANSWER: Return an improved answer following these rules:\n"
+                        "- Ensure every requested number, date, percentage, amount, deadline, and condition present "
+                        "in the context is included verbatim.\n"
+                        "- Remove every statement that is not directly supported by the context or requested by the question.\n"
+                        "- Keep two to four concise sentences maximum, except for a requested timeline.\n"
+                        "- Use plain text with no markdown, labels, source lines, citations, chunk IDs, or commentary.\n"
+                        "- If support is missing, use exactly: "
+                        "I could not find this information in the Zyro Dynamics HR policy documents.\n"
+                        "Return only those two sections."
                     ),
                 ),
                 (
@@ -863,6 +897,9 @@ class HRRagPipeline:
                 )
 
         if any(pattern.search(q) for pattern in EXTERNAL_ORGANIZATION_PATTERNS):
+            return False, "I can only answer HR-related questions from Zyro Dynamics policy documents."
+
+        if any(pattern.search(q) for pattern in LEGAL_ADVICE_PATTERNS):
             return False, "I can only answer HR-related questions from Zyro Dynamics policy documents."
 
         if any(term in q_lower for term in OBVIOUS_OUT_OF_SCOPE):
@@ -921,7 +958,7 @@ def split_policy_documents(docs: Sequence[Document], chunk_size: int, chunk_over
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap,
         add_start_index=True,
-        separators=["\n## ", "\n### ", "\n\n", "\n", ". ", "; ", " ", ""],
+        separators=["\n## ", "\n### ", "\n\n", "\n", ". ", " ", ""],
     )
     chunks = splitter.split_documents(list(docs))
     for idx, chunk in enumerate(chunks):
@@ -951,6 +988,20 @@ def build_embeddings(provider: str = "auto") -> Embeddings:
         from langchain_ollama import OllamaEmbeddings
 
         return OllamaEmbeddings(model=os.getenv("OLLAMA_EMBEDDING_MODEL", "nomic-embed-text"))
+    if selected in {"huggingface", "sentence-transformers"}:
+        model_name = os.getenv("HUGGINGFACE_EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
+        model_kwargs = {"device": os.getenv("HUGGINGFACE_EMBEDDING_DEVICE", "cpu")}
+        encode_kwargs = {"normalize_embeddings": True}
+        try:
+            from langchain_huggingface import HuggingFaceEmbeddings
+        except ImportError:
+            from langchain_community.embeddings import HuggingFaceEmbeddings
+
+        return HuggingFaceEmbeddings(
+            model_name=model_name,
+            model_kwargs=model_kwargs,
+            encode_kwargs=encode_kwargs,
+        )
     if selected == "hash":
         return LocalHashEmbeddings(dim=int(os.getenv("HASH_EMBEDDING_DIM", "768")))
     raise ValueError("Unsupported embedding provider: %s" % provider)
@@ -1029,6 +1080,10 @@ def build_chat_model(provider: str = "auto", temperature: float = 0.0):
         return ChatGroq(
             model=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
             temperature=temperature,
+            model_kwargs={"top_p": float(os.getenv("GROQ_TOP_P", "0.9"))},
+            timeout=float(os.getenv("GROQ_REQUEST_TIMEOUT", "90")),
+            max_retries=int(os.getenv("GROQ_MAX_RETRIES", "0")),
+            max_tokens=int(os.getenv("GROQ_MAX_TOKENS", "500")),
         )
     if selected == "openai":
         from langchain_openai import ChatOpenAI
@@ -1036,6 +1091,9 @@ def build_chat_model(provider: str = "auto", temperature: float = 0.0):
         return ChatOpenAI(
             model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
             temperature=temperature,
+            max_tokens=int(os.getenv("OPENAI_MAX_TOKENS", "500")),
+            timeout=float(os.getenv("OPENAI_REQUEST_TIMEOUT", "90")),
+            max_retries=int(os.getenv("OPENAI_MAX_RETRIES", "0")),
         )
     if selected == "ollama":
         from langchain_ollama import ChatOllama
@@ -1157,6 +1215,12 @@ def clean_text(text: str) -> str:
 def normalize_company_aliases(text: str) -> str:
     """Normalize the competition's legacy company alias to the policy corpus name."""
     return re.sub(r"\bAcrux Dynamics\b", "Zyro Dynamics", text or "", flags=re.I)
+
+
+def remove_company_aliases(text: str) -> str:
+    """Remove company-name boilerplate from retrieval queries."""
+    without_aliases = re.sub(r"\b(?:Acrux|Zyro)\s+Dynamics\b", " ", text or "", flags=re.I)
+    return clean_text(without_aliases)
 
 
 def infer_policy_source_hints(question: str) -> set[str]:

@@ -18,6 +18,7 @@ from hr_rag.pipeline import (
     is_vague_query,
     needs_adjacent_context,
     normalize_company_aliases,
+    remove_company_aliases,
     query_doc_overlap,
     trace_answer_inputs,
     trace_answer_output,
@@ -73,6 +74,10 @@ class PipelineEnhancementTests(unittest.TestCase):
             "What is the leave policy at Zyro Dynamics?",
         )
         self.assertEqual(
+            remove_company_aliases("What is the leave policy at Acrux Dynamics?"),
+            "What is the leave policy at ?",
+        )
+        self.assertEqual(
             infer_policy_source_hints("Who is eligible for hybrid WFH?"),
             {"03_Work_From_Home_Policy.pdf"},
         )
@@ -97,6 +102,22 @@ class PipelineEnhancementTests(unittest.TestCase):
         )
         self.assertEqual([doc.metadata["chunk_id"] for doc, *_rest in expanded], [11, 10, 12])
 
+    def test_policy_routing_excludes_unrelated_sources_when_enough_routed_chunks_exist(self):
+        docs = [
+            Document(page_content="Earned Leave accrues at 1.25 days per month.", metadata={"source_file": "02_Leave_Policy.pdf", "chunk_id": 1}),
+            Document(page_content="Earned Leave carry forward is 45 days.", metadata={"source_file": "02_Leave_Policy.pdf", "chunk_id": 2}),
+            Document(page_content="Performance reviews happen annually.", metadata={"source_file": "05_Performance_Review_Policy.pdf", "chunk_id": 3}),
+        ]
+        pipeline = HRRagPipeline(
+            HRRagConfig(retrieval_k=3, enable_hyde=False, min_retrieved_chunks=2),
+            InMemoryVectorStore.from_documents(docs, LocalHashEmbeddings()),
+            docs,
+            llm=None,
+        )
+        retrieved = pipeline.retrieve("What is the Earned Leave carry forward policy?")
+        self.assertTrue(retrieved)
+        self.assertEqual({doc.metadata["source_file"] for doc in retrieved}, {"02_Leave_Policy.pdf"})
+
     def test_competition_out_of_scope_guardrails(self):
         config = HRRagConfig(retrieval_k=2)
         vectorstore = InMemoryVectorStore.from_documents(self.docs, LocalHashEmbeddings())
@@ -106,6 +127,7 @@ class PipelineEnhancementTests(unittest.TestCase):
             "What was Acrux Dynamics' revenue last year and how is the company performing financially?",
             "Can you tell me the leave policy at Zoho or Freshworks?",
             "What are the product features and how do they compare to Salesforce?",
+            "Should I sue my manager? Please give me legal advice.",
         ]
         for question in blocked_questions:
             response = pipeline.answer(question)
@@ -147,6 +169,20 @@ class PipelineEnhancementTests(unittest.TestCase):
 
         self.assertEqual(response.critique_rating, "EXTRACTIVE_FALLBACK")
         self.assertIn("contact HR", response.answer)
+
+    def test_strict_mode_raises_instead_of_accepting_extractive_fallback(self):
+        llm = FakeListChatModel(responses=[])
+        config = HRRagConfig(
+            retrieval_k=2,
+            enable_hyde=False,
+            enable_self_critique=False,
+            allow_extractive_fallback=False,
+        )
+        vectorstore = InMemoryVectorStore.from_documents(self.docs, LocalHashEmbeddings())
+        pipeline = HRRagPipeline(config, vectorstore, self.docs, llm=llm)
+
+        with self.assertRaises(Exception):
+            pipeline.answer("What should employees do for onboarding?")
 
     def test_langsmith_trace_payloads_are_concise_and_complete(self):
         response = HRRagPipeline(

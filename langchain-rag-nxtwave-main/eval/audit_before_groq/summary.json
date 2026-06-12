@@ -1,0 +1,11 @@
+{
+  "num_questions": 4,
+  "avg_source_recall": 1.0,
+  "avg_token_f1": 0.4548,
+  "avg_rouge_l": 0.389,
+  "avg_confidence": 0.5798,
+  "hyde_rate": 0.0,
+  "refinement_rate": 0.75,
+  "block_accuracy": 1.0,
+  "num_errors": 0
+}

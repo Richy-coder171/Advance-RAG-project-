@@ -19,6 +19,12 @@ python generate_competition_submission.py `
   --langsmith-link "https://smith.langchain.com/public/YOUR-TRACE/r" `
   --embedding-provider hash `
   --llm-provider groq `
+  --chunk-size 900 `
+  --chunk-overlap 150 `
+  --retrieval-k 8 `
+  --fetch-k 60 `
+  --vector-weight 0.65 `
+  --disable-self-critique `
   --rebuild
 ```
 

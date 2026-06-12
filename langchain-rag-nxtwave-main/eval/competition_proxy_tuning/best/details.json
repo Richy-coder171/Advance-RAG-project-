@@ -1,0 +1,572 @@
+[
+  {
+    "id": "Q01",
+    "category": "competition-proxy",
+    "question": "At what rate does Earned Leave accrue per month at Acrux Dynamics, and how many days are employees entitled to after completing one year of service?",
+    "blocked": false,
+    "blocked_correct": null,
+    "expected_sources": [
+      "02_Leave_Policy.pdf"
+    ],
+    "retrieved_sources": [
+      "02_Leave_Policy.pdf",
+      "02_Leave_Policy.pdf",
+      "02_Leave_Policy.pdf"
+    ],
+    "source_recall": 1.0,
+    "confidence": 1.0,
+    "avg_confidence": 1.0,
+    "used_hyde": false,
+    "refined": false,
+    "critique_rating": null,
+    "token_f1": 0.4912280701754386,
+    "rouge_l": 0.3508771929824561,
+    "clean_answer": "Thereafter, Earned Leave accrues at the rate of 1.25 days per month. probation period accrue EL at 0.5 days per month, which becomes available for use only after probation",
+    "generated_answer": "Thereafter, Earned Leave accrues at the rate of 1.25 days per month. probation period accrue EL at 0.5 days per month, which becomes available for use only after probation",
+    "answer_with_sources": "Thereafter, Earned Leave accrues at the rate of 1.25 days per month. probation period accrue EL at 0.5 days per month, which becomes available for use only after probation",
+    "answer": "Thereafter, Earned Leave accrues at the rate of 1.25 days per month. probation period accrue EL at 0.5 days per month, which becomes available for use only after probation",
+    "reference_answer": "15 days after one year of continuous service (provided at least 240 days were worked), and thereafter Earned Leave accrues at 1.25 days per month.",
+    "sources": [
+      {
+        "source_file": "02_Leave_Policy.pdf",
+        "chunk_id": "23",
+        "file_type": "pdf",
+        "confidence": "1.00",
+        "retrieval_rank": "1",
+        "retrieval_methods": "vector_mmr, bm25",
+        "preview": "required, they must be clubbed with Earned Leave. Sick Leave taken for more than 2 consecutive days requires a Medical Certificate from a registered medical practitioner, to be submitted within 3 working days of returning to work. Leave can"
+      },
+      {
+        "source_file": "02_Leave_Policy.pdf",
+        "chunk_id": "22",
+        "file_type": "pdf",
+        "confidence": "1.00",
+        "retrieval_rank": "2",
+        "retrieval_methods": "adjacent_context",
+        "preview": "Not applicable Not applicable LEAVE RULES AND GUIDELINES The following general rules apply to all leave types unless specifically stated otherwise: Casual Leave and Sick Leave are credited to the employee's leave balance on the first day of"
+      },
+      {
+        "source_file": "02_Leave_Policy.pdf",
+        "chunk_id": "24",
+        "file_type": "pdf",
+        "confidence": "1.00",
+        "retrieval_rank": "3",
+        "retrieval_methods": "adjacent_context",
+        "preview": "probation period accrue EL at 0.5 days per month, which becomes available for use only after probation confirmation. Application and Approval Planned Earned Leave must be applied and approved at least 7 days in advance through the ZyroHR po"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "id": "Q02",
+    "category": "competition-proxy",
+    "question": "What is the maximum number of Earned Leave days that can be carried forward at the end of the financial year? What happens to the excess balance?",
+    "blocked": false,
+    "blocked_correct": null,
+    "expected_sources": [
+      "02_Leave_Policy.pdf"
+    ],
+    "retrieved_sources": [
+      "02_Leave_Policy.pdf",
+      "02_Leave_Policy.pdf"
+    ],
+    "source_recall": 1.0,
+    "confidence": 0.9919,
+    "avg_confidence": 0.9919,
+    "used_hyde": false,
+    "refined": false,
+    "critique_rating": null,
+    "token_f1": 0.32835820895522383,
+    "rouge_l": 0.29850746268656714,
+    "clean_answer": "A maximum of 45 days of Earned Leave may be carried forward at the end of each financial year (31 March). Casual Leave and Sick Leave cannot be carried forward to the next financial year, nor can they be",
+    "generated_answer": "A maximum of 45 days of Earned Leave may be carried forward at the end of each financial year (31 March). Casual Leave and Sick Leave cannot be carried forward to the next financial year, nor can they be",
+    "answer_with_sources": "A maximum of 45 days of Earned Leave may be carried forward at the end of each financial year (31 March). Casual Leave and Sick Leave cannot be carried forward to the next financial year, nor can they be",
+    "answer": "A maximum of 45 days of Earned Leave may be carried forward at the end of each financial year (31 March). Casual Leave and Sick Leave cannot be carried forward to the next financial year, nor can they be",
+    "reference_answer": "45 days may be carried forward; any balance exceeding this limit will be automatically encashed at the employee's basic daily rate and credited in the April payroll.",
+    "sources": [
+      {
+        "source_file": "02_Leave_Policy.pdf",
+        "chunk_id": "25",
+        "file_type": "pdf",
+        "confidence": "1.00",
+        "retrieval_rank": "1",
+        "retrieval_methods": "vector_mmr, bm25",
+        "preview": "Zyro Dynamics Pvt. Ltd. Leave Policy Doc Code: ZDL-HR-002 Confidential \u2014 For Internal Use Only Page 3 Carry Forward A maximum of 45 days of Earned Leave may be carried forward at the end of each financial year (31 March). Any balance exceed"
+      },
+      {
+        "source_file": "02_Leave_Policy.pdf",
+        "chunk_id": "22",
+        "file_type": "pdf",
+        "confidence": "0.98",
+        "retrieval_rank": "2",
+        "retrieval_methods": "vector_mmr, bm25",
+        "preview": "Not applicable Not applicable LEAVE RULES AND GUIDELINES The following general rules apply to all leave types unless specifically stated otherwise: Casual Leave and Sick Leave are credited to the employee's leave balance on the first day of"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "id": "Q03",
+    "category": "competition-proxy",
+    "question": "How many weeks of maternity leave is an employee entitled to, and what is the minimum service requirement to be eligible?",
+    "blocked": false,
+    "blocked_correct": null,
+    "expected_sources": [
+      "02_Leave_Policy.pdf"
+    ],
+    "retrieved_sources": [
+      "02_Leave_Policy.pdf",
+      "02_Leave_Policy.pdf",
+      "02_Leave_Policy.pdf"
+    ],
+    "source_recall": 1.0,
+    "confidence": 1.0,
+    "avg_confidence": 1.0,
+    "used_hyde": false,
+    "refined": false,
+    "critique_rating": null,
+    "token_f1": 0.78125,
+    "rouge_l": 0.6562499999999999,
+    "clean_answer": "expected date of delivery are entitled to 26 weeks of paid Maternity Leave, in accordance with the Maternity Female employees who have completed a minimum of 80 days of service in the 12 months preceding the",
+    "generated_answer": "expected date of delivery are entitled to 26 weeks of paid Maternity Leave, in accordance with the Maternity Female employees who have completed a minimum of 80 days of service in the 12 months preceding the",
+    "answer_with_sources": "expected date of delivery are entitled to 26 weeks of paid Maternity Leave, in accordance with the Maternity Female employees who have completed a minimum of 80 days of service in the 12 months preceding the",
+    "answer": "expected date of delivery are entitled to 26 weeks of paid Maternity Leave, in accordance with the Maternity Female employees who have completed a minimum of 80 days of service in the 12 months preceding the",
+    "reference_answer": "26 weeks of paid Maternity Leave, provided the employee has completed a minimum of 80 days of service in the 12 months preceding the expected date of delivery.",
+    "sources": [
+      {
+        "source_file": "02_Leave_Policy.pdf",
+        "chunk_id": "26",
+        "file_type": "pdf",
+        "confidence": "1.00",
+        "retrieval_rank": "1",
+        "retrieval_methods": "vector_mmr, bm25",
+        "preview": "MATERNITY AND PATERNITY LEAVE Maternity Leave Female employees who have completed a minimum of 80 days of service in the 12 months preceding the expected date of delivery are entitled to 26 weeks of paid Maternity Leave, in accordance with "
+      },
+      {
+        "source_file": "02_Leave_Policy.pdf",
+        "chunk_id": "25",
+        "file_type": "pdf",
+        "confidence": "1.00",
+        "retrieval_rank": "2",
+        "retrieval_methods": "adjacent_context",
+        "preview": "Zyro Dynamics Pvt. Ltd. Leave Policy Doc Code: ZDL-HR-002 Confidential \u2014 For Internal Use Only Page 3 Carry Forward A maximum of 45 days of Earned Leave may be carried forward at the end of each financial year (31 March). Any balance exceed"
+      },
+      {
+        "source_file": "02_Leave_Policy.pdf",
+        "chunk_id": "27",
+        "file_type": "pdf",
+        "confidence": "1.00",
+        "retrieval_rank": "3",
+        "retrieval_methods": "adjacent_context",
+        "preview": "BEREAVEMENT AND MARRIAGE LEAVE Bereavement Leave Employees are entitled to 5 days of paid Bereavement Leave in the event of the death of an immediate family member. For this purpose, immediate family is defined as the employee's spouse, chi"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "id": "Q04",
+    "category": "competition-proxy",
+    "question": "If an employee takes sick leave for more than 2 consecutive days, what is required and by when must it be submitted?",
+    "blocked": false,
+    "blocked_correct": null,
+    "expected_sources": [
+      "02_Leave_Policy.pdf"
+    ],
+    "retrieved_sources": [
+      "02_Leave_Policy.pdf",
+      "02_Leave_Policy.pdf",
+      "02_Leave_Policy.pdf"
+    ],
+    "source_recall": 1.0,
+    "confidence": 1.0,
+    "avg_confidence": 1.0,
+    "used_hyde": false,
+    "refined": false,
+    "critique_rating": null,
+    "token_f1": 0.39999999999999997,
+    "rouge_l": 0.36,
+    "clean_answer": "Sick Leave taken for more than 2 consecutive days requires a Medical Certificate from a registered medical Employees are not permitted to avail more than 2 consecutive days of Casual Leave.",
+    "generated_answer": "Sick Leave taken for more than 2 consecutive days requires a Medical Certificate from a registered medical Employees are not permitted to avail more than 2 consecutive days of Casual Leave.",
+    "answer_with_sources": "Sick Leave taken for more than 2 consecutive days requires a Medical Certificate from a registered medical Employees are not permitted to avail more than 2 consecutive days of Casual Leave.",
+    "answer": "Sick Leave taken for more than 2 consecutive days requires a Medical Certificate from a registered medical Employees are not permitted to avail more than 2 consecutive days of Casual Leave.",
+    "reference_answer": "A Medical Certificate from a registered medical practitioner must be submitted within 3 working days of returning to work.",
+    "sources": [
+      {
+        "source_file": "02_Leave_Policy.pdf",
+        "chunk_id": "22",
+        "file_type": "pdf",
+        "confidence": "1.00",
+        "retrieval_rank": "1",
+        "retrieval_methods": "vector_mmr, bm25",
+        "preview": "Not applicable Not applicable LEAVE RULES AND GUIDELINES The following general rules apply to all leave types unless specifically stated otherwise: Casual Leave and Sick Leave are credited to the employee's leave balance on the first day of"
+      },
+      {
+        "source_file": "02_Leave_Policy.pdf",
+        "chunk_id": "21",
+        "file_type": "pdf",
+        "confidence": "1.00",
+        "retrieval_rank": "2",
+        "retrieval_methods": "adjacent_context",
+        "preview": "Zyro Dynamics Pvt. Ltd. Leave Policy Doc Code: ZDL-HR-002 Confidential \u2014 For Internal Use Only Page 2 ANNUAL LEAVE ENTITLEMENT Leave Type Annual Entitlement Carry Forward Encashable Earned Leave (EL) 15 days (after 1 year); 1.25 days/month "
+      },
+      {
+        "source_file": "02_Leave_Policy.pdf",
+        "chunk_id": "23",
+        "file_type": "pdf",
+        "confidence": "1.00",
+        "retrieval_rank": "3",
+        "retrieval_methods": "adjacent_context",
+        "preview": "required, they must be clubbed with Earned Leave. Sick Leave taken for more than 2 consecutive days requires a Medical Certificate from a registered medical practitioner, to be submitted within 3 working days of returning to work. Leave can"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "id": "Q05",
+    "category": "competition-proxy",
+    "question": "By which date is salary credited each month at Acrux Dynamics, and what is the payroll cut-off date?",
+    "blocked": false,
+    "blocked_correct": null,
+    "expected_sources": [
+      "06_Compensation_and_Benefits_Policy.pdf"
+    ],
+    "retrieved_sources": [
+      "06_Compensation_and_Benefits_Policy.pdf",
+      "06_Compensation_and_Benefits_Policy.pdf",
+      "06_Compensation_and_Benefits_Policy.pdf"
+    ],
+    "source_recall": 1.0,
+    "confidence": 1.0,
+    "avg_confidence": 1.0,
+    "used_hyde": false,
+    "refined": false,
+    "critique_rating": null,
+    "token_f1": 0.5306122448979592,
+    "rouge_l": 0.40816326530612246,
+    "clean_answer": "The payroll cut-off date is the 24th of each month. 24th will be adjusted in the subsequent month's payroll cycle.",
+    "generated_answer": "The payroll cut-off date is the 24th of each month. 24th will be adjusted in the subsequent month's payroll cycle.",
+    "answer_with_sources": "The payroll cut-off date is the 24th of each month. 24th will be adjusted in the subsequent month's payroll cycle.",
+    "answer": "The payroll cut-off date is the 24th of each month. 24th will be adjusted in the subsequent month's payroll cycle.",
+    "reference_answer": "Salary is credited to the employee's registered bank account by the 7th of the following month, and the payroll cut-off date is the 24th of each month.",
+    "sources": [
+      {
+        "source_file": "06_Compensation_and_Benefits_Policy.pdf",
+        "chunk_id": "57",
+        "file_type": "pdf",
+        "confidence": "1.00",
+        "retrieval_rank": "1",
+        "retrieval_methods": "vector_mmr, bm25",
+        "preview": "and remain competitive with the Indian IT product industry. The confidentiality of individual compensation details and employment contract terms is to be strictly maintained at all times. Employees must not disclose their compensation to co"
+      },
+      {
+        "source_file": "06_Compensation_and_Benefits_Policy.pdf",
+        "chunk_id": "56",
+        "file_type": "pdf",
+        "confidence": "1.00",
+        "retrieval_rank": "2",
+        "retrieval_methods": "adjacent_context",
+        "preview": "Zyro Dynamics Pvt. Ltd. Compensation and Benefits Policy Doc Code: ZDL-HR-006 Confidential \u2014 For Internal Use Only Page 1 Zyro Dynamics Pvt. Ltd. Navigate the Future Compensation and Benefits Policy Document Code ZDL-HR-006 Version V.02 Eff"
+      },
+      {
+        "source_file": "06_Compensation_and_Benefits_Policy.pdf",
+        "chunk_id": "58",
+        "file_type": "pdf",
+        "confidence": "1.00",
+        "retrieval_rank": "3",
+        "retrieval_methods": "adjacent_context",
+        "preview": "24th will be adjusted in the subsequent month's payroll cycle. New employees joining after the 24th will still receive their salary for that month on the standard payday, with the salary calculated on a pro-rata basis."
+      }
+    ],
+    "error": ""
+  },
+  {
+    "id": "Q06",
+    "category": "competition-proxy",
+    "question": "What is the CTC range and bonus target for an L4 (Senior) grade employee at Acrux Dynamics?",
+    "blocked": false,
+    "blocked_correct": null,
+    "expected_sources": [
+      "06_Compensation_and_Benefits_Policy.pdf"
+    ],
+    "retrieved_sources": [
+      "06_Compensation_and_Benefits_Policy.pdf",
+      "06_Compensation_and_Benefits_Policy.pdf",
+      "06_Compensation_and_Benefits_Policy.pdf"
+    ],
+    "source_recall": 1.0,
+    "confidence": 0.35,
+    "avg_confidence": 0.35,
+    "used_hyde": false,
+    "refined": false,
+    "critique_rating": null,
+    "token_f1": 0.1016949152542373,
+    "rouge_l": 0.1016949152542373,
+    "clean_answer": "Note: Zyro Dynamics ensures that no deduction will cause an employee's net salary to fall below the applicable statutory Personal Accident Insurance: Coverage equivalent to 5 times the employee's annual CTC.",
+    "generated_answer": "Note: Zyro Dynamics ensures that no deduction will cause an employee's net salary to fall below the applicable statutory Personal Accident Insurance: Coverage equivalent to 5 times the employee's annual CTC.",
+    "answer_with_sources": "Note: Zyro Dynamics ensures that no deduction will cause an employee's net salary to fall below the applicable statutory Personal Accident Insurance: Coverage equivalent to 5 times the employee's annual CTC.",
+    "answer": "Note: Zyro Dynamics ensures that no deduction will cause an employee's net salary to fall below the applicable statutory Personal Accident Insurance: Coverage equivalent to 5 times the employee's annual CTC.",
+    "reference_answer": "The CTC range for L4 (Senior) grade employees is Rs. 16.0 L to Rs. 26.0 L, with a bonus target of 10% of CTC.",
+    "sources": [
+      {
+        "source_file": "06_Compensation_and_Benefits_Policy.pdf",
+        "chunk_id": "61",
+        "file_type": "pdf",
+        "confidence": "0.35",
+        "retrieval_rank": "1",
+        "retrieval_methods": "bm25",
+        "preview": "Zyro Dynamics Pvt. Ltd. Compensation and Benefits Policy Doc Code: ZDL-HR-006 Confidential \u2014 For Internal Use Only Page 3 SALARY BANDS BY GRADE Grade Level CTC Range (INR per annum) Bonus Target L1 Trainee Rs. 3.0L to Rs. 4.5L (stipend basi"
+      },
+      {
+        "source_file": "06_Compensation_and_Benefits_Policy.pdf",
+        "chunk_id": "60",
+        "file_type": "pdf",
+        "confidence": "0.35",
+        "retrieval_rank": "2",
+        "retrieval_methods": "adjacent_context",
+        "preview": "The Company may make deductions from an employee's salary in the following circumstances: Leave without pay in the current payroll period. Recovery of mistaken overpayment of salary from a previous period. Contributions towards statutory fu"
+      },
+      {
+        "source_file": "06_Compensation_and_Benefits_Policy.pdf",
+        "chunk_id": "62",
+        "file_type": "pdf",
+        "confidence": "0.35",
+        "retrieval_rank": "3",
+        "retrieval_methods": "adjacent_context",
+        "preview": "30% or more of CTC STATUTORY BONUS Employees whose gross monthly salary is at or below Rs. 21,000 (or such other amount as may be prescribed under law from time to time) and who have worked for at least 30 days in a financial year are eligi"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "id": "Q07",
+    "category": "competition-proxy",
+    "question": "What health insurance coverage is provided to employees at Acrux Dynamics? Who does it cover and what is the premium arrangement?",
+    "blocked": false,
+    "blocked_correct": null,
+    "expected_sources": [
+      "06_Compensation_and_Benefits_Policy.pdf"
+    ],
+    "retrieved_sources": [
+      "06_Compensation_and_Benefits_Policy.pdf",
+      "06_Compensation_and_Benefits_Policy.pdf",
+      "06_Compensation_and_Benefits_Policy.pdf"
+    ],
+    "source_recall": 1.0,
+    "confidence": 1.0,
+    "avg_confidence": 1.0,
+    "used_hyde": false,
+    "refined": false,
+    "critique_rating": null,
+    "token_f1": 0.3389830508474576,
+    "rouge_l": 0.23728813559322032,
+    "clean_answer": "Term Life Insurance: Coverage of 3 times the annual CTC for all permanent employees. Personal Accident Insurance: Coverage equivalent to 5 times the employee's annual CTC.",
+    "generated_answer": "Term Life Insurance: Coverage of 3 times the annual CTC for all permanent employees. Personal Accident Insurance: Coverage equivalent to 5 times the employee's annual CTC.",
+    "answer_with_sources": "Term Life Insurance: Coverage of 3 times the annual CTC for all permanent employees. Personal Accident Insurance: Coverage equivalent to 5 times the employee's annual CTC.",
+    "answer": "Term Life Insurance: Coverage of 3 times the annual CTC for all permanent employees. Personal Accident Insurance: Coverage equivalent to 5 times the employee's annual CTC.",
+    "reference_answer": "Group Medical Insurance provides coverage of up to Rs 5,00,000 per year for the employee, spouse and up to two dependent children, with all premiums fully paid by the Company.",
+    "sources": [
+      {
+        "source_file": "06_Compensation_and_Benefits_Policy.pdf",
+        "chunk_id": "62",
+        "file_type": "pdf",
+        "confidence": "1.00",
+        "retrieval_rank": "1",
+        "retrieval_methods": "vector_mmr, bm25",
+        "preview": "30% or more of CTC STATUTORY BONUS Employees whose gross monthly salary is at or below Rs. 21,000 (or such other amount as may be prescribed under law from time to time) and who have worked for at least 30 days in a financial year are eligi"
+      },
+      {
+        "source_file": "06_Compensation_and_Benefits_Policy.pdf",
+        "chunk_id": "61",
+        "file_type": "pdf",
+        "confidence": "1.00",
+        "retrieval_rank": "2",
+        "retrieval_methods": "adjacent_context",
+        "preview": "Zyro Dynamics Pvt. Ltd. Compensation and Benefits Policy Doc Code: ZDL-HR-006 Confidential \u2014 For Internal Use Only Page 3 SALARY BANDS BY GRADE Grade Level CTC Range (INR per annum) Bonus Target L1 Trainee Rs. 3.0L to Rs. 4.5L (stipend basi"
+      },
+      {
+        "source_file": "06_Compensation_and_Benefits_Policy.pdf",
+        "chunk_id": "63",
+        "file_type": "pdf",
+        "confidence": "1.00",
+        "retrieval_rank": "3",
+        "retrieval_methods": "adjacent_context",
+        "preview": "Term Life Insurance: Coverage of 3 times the annual CTC for all permanent employees. Retirement Benefits Provident Fund: Both the employee and the Company contribute 12% of the employee's basic salary each month to the PF account. This is m"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "id": "Q08",
+    "category": "competition-proxy",
+    "question": "When is an employee placed on a Performance Improvement Plan (PIP), and what is the duration of a PIP at Acrux Dynamics?",
+    "blocked": false,
+    "blocked_correct": null,
+    "expected_sources": [
+      "05_Performance_Review_Policy.pdf"
+    ],
+    "retrieved_sources": [
+      "05_Performance_Review_Policy.pdf",
+      "05_Performance_Review_Policy.pdf",
+      "05_Performance_Review_Policy.pdf"
+    ],
+    "source_recall": 1.0,
+    "confidence": 0.5233,
+    "avg_confidence": 0.5233,
+    "used_hyde": false,
+    "refined": false,
+    "critique_rating": null,
+    "token_f1": 0.7142857142857142,
+    "rouge_l": 0.5,
+    "clean_answer": "PERFORMANCE IMPROVEMENT PLAN (PIP) An employee who receives a rating of 1 or 2 in two consecutive review cycles will be placed on a formal",
+    "generated_answer": "PERFORMANCE IMPROVEMENT PLAN (PIP) An employee who receives a rating of 1 or 2 in two consecutive review cycles will be placed on a formal",
+    "answer_with_sources": "PERFORMANCE IMPROVEMENT PLAN (PIP) An employee who receives a rating of 1 or 2 in two consecutive review cycles will be placed on a formal",
+    "answer": "PERFORMANCE IMPROVEMENT PLAN (PIP) An employee who receives a rating of 1 or 2 in two consecutive review cycles will be placed on a formal",
+    "reference_answer": "An employee is placed on a Performance Improvement Plan when they receive a rating of 1 or 2 in two consecutive review cycles; the PIP duration is 60 to 90 days.",
+    "sources": [
+      {
+        "source_file": "05_Performance_Review_Policy.pdf",
+        "chunk_id": "52",
+        "file_type": "pdf",
+        "confidence": "0.33",
+        "retrieval_rank": "1",
+        "retrieval_methods": "bm25",
+        "preview": "Zyro Dynamics Pvt. Ltd. Performance Review Policy Doc Code: ZDL-HR-005 Confidential \u2014 For Internal Use Only Page 3 ANNUAL PERFORMANCE REVIEW PROCESS St ag e Activity Timeline Owner 1 360 degree feedback collected from peers and subordinates"
+      },
+      {
+        "source_file": "05_Performance_Review_Policy.pdf",
+        "chunk_id": "51",
+        "file_type": "pdf",
+        "confidence": "0.33",
+        "retrieval_rank": "2",
+        "retrieval_methods": "adjacent_context",
+        "preview": "Key Results are 3 to 5 measurable outcomes per objective that define what success looks like in concrete terms. Goals are mutually agreed between the employee and their reporting manager and cannot be set unilaterally by either party. Goals"
+      },
+      {
+        "source_file": "05_Performance_Review_Policy.pdf",
+        "chunk_id": "49",
+        "file_type": "pdf",
+        "confidence": "0.90",
+        "retrieval_rank": "5",
+        "retrieval_methods": "vector_mmr, bm25",
+        "preview": "Zyro Dynamics Pvt. Ltd. Performance Review Policy Doc Code: ZDL-HR-005 Confidential \u2014 For Internal Use Only Page 2 REVIEW CYCLES Review Type Frequency When Purpose Probation Review At Month 3 and Month 6 End of Month 3 and Month 6 Confirm, "
+      }
+    ],
+    "error": ""
+  },
+  {
+    "id": "Q09",
+    "category": "competition-proxy",
+    "question": "What is the Annual Performance Review (APR) timeline, and when are increment and promotion letters issued?",
+    "blocked": false,
+    "blocked_correct": null,
+    "expected_sources": [
+      "05_Performance_Review_Policy.pdf"
+    ],
+    "retrieved_sources": [
+      "05_Performance_Review_Policy.pdf",
+      "05_Performance_Review_Policy.pdf",
+      "05_Performance_Review_Policy.pdf"
+    ],
+    "source_recall": 1.0,
+    "confidence": 0.9361,
+    "avg_confidence": 0.9361,
+    "used_hyde": false,
+    "refined": false,
+    "critique_rating": null,
+    "token_f1": 0.08403361344537816,
+    "rouge_l": 0.08403361344537816,
+    "clean_answer": "Increment and promotion letters issued ANNUAL PERFORMANCE REVIEW PROCESS",
+    "generated_answer": "Increment and promotion letters issued ANNUAL PERFORMANCE REVIEW PROCESS",
+    "answer_with_sources": "Increment and promotion letters issued ANNUAL PERFORMANCE REVIEW PROCESS",
+    "answer": "Increment and promotion letters issued ANNUAL PERFORMANCE REVIEW PROCESS",
+    "reference_answer": "1. 360 degree feedback collected from peers and subordinates - 1 to 20 February - HR System. 2. Employee self-assessment submitted on ZyroHR portal - 1 to 10 March - Employee. 3. Manager completes assessment and submits draft rating - 11 to 20 March - Reporting Manager. 4. Calibration meeting held with all L6 and above managers - 21 to 25 March - HR and L7+ Leaders. 5. Final ratings locked and confirmed by HR - 26 to 31 March - HR. 6. One-on-one feedback conversation between employee and manager - 1 to 10 April - Manager. 7. Increment and promotion letters issued - 15 April - HR and Finance.",
+    "sources": [
+      {
+        "source_file": "05_Performance_Review_Policy.pdf",
+        "chunk_id": "52",
+        "file_type": "pdf",
+        "confidence": "0.94",
+        "retrieval_rank": "1",
+        "retrieval_methods": "vector_mmr, bm25",
+        "preview": "Zyro Dynamics Pvt. Ltd. Performance Review Policy Doc Code: ZDL-HR-005 Confidential \u2014 For Internal Use Only Page 3 ANNUAL PERFORMANCE REVIEW PROCESS St ag e Activity Timeline Owner 1 360 degree feedback collected from peers and subordinates"
+      },
+      {
+        "source_file": "05_Performance_Review_Policy.pdf",
+        "chunk_id": "51",
+        "file_type": "pdf",
+        "confidence": "0.94",
+        "retrieval_rank": "2",
+        "retrieval_methods": "adjacent_context",
+        "preview": "Key Results are 3 to 5 measurable outcomes per objective that define what success looks like in concrete terms. Goals are mutually agreed between the employee and their reporting manager and cannot be set unilaterally by either party. Goals"
+      },
+      {
+        "source_file": "05_Performance_Review_Policy.pdf",
+        "chunk_id": "53",
+        "file_type": "pdf",
+        "confidence": "0.94",
+        "retrieval_rank": "3",
+        "retrieval_methods": "adjacent_context",
+        "preview": "PERFORMANCE IMPROVEMENT PLAN (PIP) An employee who receives a rating of 1 or 2 in two consecutive review cycles will be placed on a formal Performance Improvement Plan. The PIP is a structured and time-bound programme aimed at giving the em"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "id": "Q10",
+    "category": "competition-proxy",
+    "question": "Who is eligible to work from home at Acrux Dynamics, and what are the different types of WFH arrangements available?",
+    "blocked": false,
+    "blocked_correct": null,
+    "expected_sources": [
+      "03_Work_From_Home_Policy.pdf"
+    ],
+    "retrieved_sources": [
+      "03_Work_From_Home_Policy.pdf",
+      "03_Work_From_Home_Policy.pdf",
+      "03_Work_From_Home_Policy.pdf"
+    ],
+    "source_recall": 1.0,
+    "confidence": 0.9695,
+    "avg_confidence": 0.9695,
+    "used_hyde": false,
+    "refined": false,
+    "critique_rating": null,
+    "token_f1": 0.3116883116883117,
+    "rouge_l": 0.12987012987012986,
+    "clean_answer": "Employees must submit a WFH request through the ZyroHR portal under the Work Arrangements section at Completed a minimum of 6 months of continuous service at Zyro Dynamics.",
+    "generated_answer": "Employees must submit a WFH request through the ZyroHR portal under the Work Arrangements section at Completed a minimum of 6 months of continuous service at Zyro Dynamics.",
+    "answer_with_sources": "Employees must submit a WFH request through the ZyroHR portal under the Work Arrangements section at Completed a minimum of 6 months of continuous service at Zyro Dynamics.",
+    "answer": "Employees must submit a WFH request through the ZyroHR portal under the Work Arrangements section at Completed a minimum of 6 months of continuous service at Zyro Dynamics.",
+    "reference_answer": "Yes, permanent employees at grade L3 and above with at least 6 months service, a Meets Expectations or higher rating, no active PIP or disciplinary action, and a role deemed suitable for remote work are eligible. The WFH arrangements are Hybrid WFH, Full Remote, Ad-hoc WFH, and Emergency WFH.",
+    "sources": [
+      {
+        "source_file": "03_Work_From_Home_Policy.pdf",
+        "chunk_id": "32",
+        "file_type": "pdf",
+        "confidence": "0.97",
+        "retrieval_rank": "1",
+        "retrieval_methods": "vector_mmr, bm25",
+        "preview": "Zyro Dynamics Pvt. Ltd. Work From Home Policy Doc Code: ZDL-HR-003 Confidential \u2014 For Internal Use Only Page 2 TYPES OF WFH ARRANGEMENTS Arrangement Description Eligibility Max Days/Week Hybrid WFH Fixed WFH days as agreed with reporting ma"
+      },
+      {
+        "source_file": "03_Work_From_Home_Policy.pdf",
+        "chunk_id": "31",
+        "file_type": "pdf",
+        "confidence": "0.97",
+        "retrieval_rank": "2",
+        "retrieval_methods": "adjacent_context",
+        "preview": "under any circumstances. SCOPE AND APPLICABILITY This policy applies to all permanent employees at grade L3 and above across all Zyro Dynamics office locations. Employees on probation, employees at grades L1 and L2, and employees deployed a"
+      },
+      {
+        "source_file": "03_Work_From_Home_Policy.pdf",
+        "chunk_id": "33",
+        "file_type": "pdf",
+        "confidence": "0.97",
+        "retrieval_rank": "3",
+        "retrieval_methods": "adjacent_context",
+        "preview": "Completed a minimum of 6 months of continuous service at Zyro Dynamics. Currently holding grade L3 or above. Has received a performance rating of Meets Expectations or above in the most recent performance review cycle. Has no active Perform"
+      }
+    ],
+    "error": ""
+  }
+]

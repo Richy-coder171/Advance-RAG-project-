@@ -4,6 +4,8 @@ from tempfile import TemporaryDirectory
 
 from generate_competition_submission import (
     extract_competition_questions,
+    retry_wait_seconds,
+    validate_competition_response,
     validate_links,
 )
 from hr_rag import validate_official_corpus
@@ -33,6 +35,37 @@ class CompetitionSubmissionTests(unittest.TestCase):
             validate_links("http://localhost:8501", "https://smith.langchain.com/public/7d409145-121a-4bd1-b34d-efcbe8fd423e/r")
         with self.assertRaises(ValueError):
             validate_links("https://your-real-app.streamlit.app", "https://smith.langchain.com/public/your-real-trace/r")
+
+    def test_retry_wait_uses_groq_rate_limit_hint(self):
+        self.assertAlmostEqual(retry_wait_seconds(Exception("Please try again in 2m47.5s."), 15, 1), 172.5)
+
+    def test_critical_answer_validation_rejects_missing_facts_and_fallback(self):
+        response = type("Response", (), {"answer": "", "blocked": False, "critique_rating": None})
+        response.answer = "45 days. Excess leave is automatically encashed and credited in the April payroll."
+        validate_competition_response("Q02", 2, response)
+
+        response.answer = "Group Medical Insurance covers the employee and spouse."
+        with self.assertRaises(ValueError):
+            validate_competition_response("Q07", 7, response)
+
+        response.answer = "Note: Zyro Dynamics ensures that no deduction... Promotions at Zyro Dynamics are merit-based."
+        with self.assertRaises(ValueError):
+            validate_competition_response("Q06", 6, response)
+
+        response.answer = "L4 Senior: Rs. 16.0L to Rs. 26.0L; bonus target: 10% of CTC."
+        validate_competition_response("Q06", 6, response)
+
+        response.answer = "L4 Senior: Rs.\u202f16.0\u202fL to Rs.\u202f26.0\u202fL; bonus target: 10% of CTC."
+        validate_competition_response("Q06", 6, response)
+
+        response.answer = "L4 Senior: Rs. 16.0L to Rs. 26.0L; bonus target: 10% of CTC. [Document 3]"
+        with self.assertRaises(ValueError):
+            validate_competition_response("Q06", 6, response)
+
+        response.answer = "A normal answer"
+        response.blocked = True
+        with self.assertRaises(ValueError):
+            validate_competition_response("Q11", 11, response)
 
 
 if __name__ == "__main__":

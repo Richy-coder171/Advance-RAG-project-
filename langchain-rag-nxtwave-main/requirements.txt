@@ -6,9 +6,11 @@ langchain-openai
 langchain-ollama
 langchain-chroma
 langchain-community
+langchain-huggingface
 chromadb
 langsmith
 pypdf
 pandas
 python-dotenv
 cryptography
+sentence-transformers

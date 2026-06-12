@@ -19,19 +19,25 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--validation-file", default="eval/hr_validation_sample.jsonl", help="JSONL or CSV validation file.")
     parser.add_argument("--output-dir", default="eval/results", help="Directory for evaluation outputs.")
     parser.add_argument("--db-path", default="chroma_hr_eval_store", help="Vector DB folder for evaluation.")
-    parser.add_argument("--embedding-provider", default="hash", choices=["auto", "openai", "ollama", "hash"])
+    parser.add_argument(
+        "--embedding-provider",
+        default="hash",
+        choices=["auto", "openai", "ollama", "huggingface", "hash"],
+    )
     parser.add_argument("--llm-provider", default="extractive", choices=["auto", "groq", "openai", "ollama", "extractive"])
-    parser.add_argument("--chunk-size", type=int, default=700)
+    parser.add_argument("--chunk-size", type=int, default=900)
     parser.add_argument("--chunk-overlap", type=int, default=150)
-    parser.add_argument("--retrieval-k", type=int, default=10)
-    parser.add_argument("--fetch-k", type=int, default=48)
-    parser.add_argument("--vector-weight", type=float, default=0.6)
+    parser.add_argument("--retrieval-k", type=int, default=8)
+    parser.add_argument("--fetch-k", type=int, default=60)
+    parser.add_argument("--vector-weight", type=float, default=0.65)
     parser.add_argument("--keyword-weight", type=float, default=None, help="BM25 weight. Defaults to 1 - vector_weight.")
     parser.add_argument("--min-confidence", type=float, default=0.35)
     parser.add_argument("--max-chunks-per-source", type=int, default=2)
-    parser.add_argument("--critique-threshold", type=float, default=0.65)
+    parser.add_argument("--critique-threshold", type=float, default=0.55)
     parser.add_argument("--disable-hyde", action="store_true")
-    parser.add_argument("--disable-self-critique", action="store_true")
+    critique_group = parser.add_mutually_exclusive_group()
+    critique_group.add_argument("--disable-self-critique", action="store_true")
+    critique_group.add_argument("--force-self-critique", action="store_true")
     parser.add_argument("--no-source-block", action="store_true")
     parser.add_argument("--rebuild", action="store_true")
     return parser.parse_args()
@@ -229,16 +235,22 @@ def evaluate_rows(pipeline: HRRagPipeline, rows: List[Dict[str, Any]], force_ref
 
 
 def summarize(results: List[Dict[str, Any]]) -> Dict[str, Any]:
+    in_scope = [result for result in results if not result["blocked"]]
     return {
         "num_questions": len(results),
         "avg_source_recall": average([r["source_recall"] for r in results if r["source_recall"] is not None]),
         "avg_token_f1": average([r["token_f1"] for r in results if r["token_f1"] is not None]),
         "avg_rouge_l": average([r["rouge_l"] for r in results if r["rouge_l"] is not None]),
+        "avg_in_scope_token_f1": average([r["token_f1"] for r in in_scope if r["token_f1"] is not None]),
+        "avg_in_scope_rouge_l": average([r["rouge_l"] for r in in_scope if r["rouge_l"] is not None]),
         "avg_confidence": average([r["confidence"] for r in results]),
         "hyde_rate": average([1.0 if r["used_hyde"] else 0.0 for r in results]),
         "refinement_rate": average([1.0 if r["refined"] else 0.0 for r in results]),
         "block_accuracy": average(
             [1.0 if r["blocked_correct"] else 0.0 for r in results if r["blocked_correct"] is not None]
+        ),
+        "unexpected_guardrail_blocks": sum(
+            1 for result in results if result["blocked"] and not result["blocked_correct"]
         ),
         "num_errors": sum(1 for r in results if r["error"]),
     }
@@ -308,6 +320,28 @@ def write_outputs(results: List[Dict[str, Any]], summary: Dict[str, Any], output
                 )
 
 
+def print_diagnostics(results: List[Dict[str, Any]], threshold: float = 0.75) -> None:
+    bleeding = [
+        result["id"]
+        for result in results
+        if result["token_f1"] is not None and result["token_f1"] < threshold
+    ]
+    unexpected_blocks = [
+        result["id"]
+        for result in results
+        if result["blocked"] and not result["blocked_correct"]
+    ]
+    expected_blocks = [result for result in results if result["blocked_correct"] is not None]
+    correctly_blocked = [result["id"] for result in expected_blocks if result["blocked_correct"]]
+    print("Diagnostics:")
+    print("- token_f1 < %.2f: %s" % (threshold, ", ".join(map(str, bleeding)) if bleeding else "NONE"))
+    print("- unexpected guardrail blocks: %s" % (", ".join(map(str, unexpected_blocks)) if unexpected_blocks else "NONE"))
+    print(
+        "- expected blocked questions correct: %s/%s (%s)"
+        % (len(correctly_blocked), len(expected_blocks), ", ".join(map(str, correctly_blocked)) if correctly_blocked else "NONE")
+    )
+
+
 def main() -> None:
     args = parse_args()
     rows = load_validation_rows(args.validation_file)
@@ -330,10 +364,11 @@ def main() -> None:
         append_source_block=not args.no_source_block,
     )
     pipeline = HRRagPipeline.from_config(config, rebuild=args.rebuild)
-    results = evaluate_rows(pipeline, rows, force_refine=not args.disable_self_critique)
+    results = evaluate_rows(pipeline, rows, force_refine=args.force_self_critique)
     summary = summarize(results)
     write_outputs(results, summary, args.output_dir)
     print(json.dumps(summary, indent=2))
+    print_diagnostics(results)
     print("Wrote evaluation files to %s" % args.output_dir)
 
 

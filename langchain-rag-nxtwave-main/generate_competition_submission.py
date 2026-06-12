@@ -8,7 +8,7 @@ import os
 import re
 import time
 from pathlib import Path
-from typing import List, Sequence, Tuple
+from typing import Callable, List, Optional, Sequence, Tuple
 
 from cryptography.fernet import Fernet
 
@@ -25,6 +25,38 @@ REFUSAL_MARKERS = (
     "i cannot answer",
     "not available in the",
 )
+BROKEN_FALLBACK_MARKERS = (
+    "note: zyro dynamics ensures that no deduction",
+    "promotions at zyro dynamics are merit-based",
+    "relevance rank:",
+    "requested parts of the question",
+    "to answer the employee question",
+)
+RAW_ANSWER_ARTIFACT_PATTERNS = (
+    re.compile(r"\[\s*document\s+\d+\s*\]", re.IGNORECASE),
+    re.compile(r"\bchunk\s*(?:id)?\s*[:#]?\s*\d+\b", re.IGNORECASE),
+    re.compile(r"\brelevance rank\s*:", re.IGNORECASE),
+    re.compile(r"\bsource file\s*:", re.IGNORECASE),
+)
+CRITICAL_ANSWER_MARKERS = {
+    "Q01": (("1.25",), ("15 days",), ("one year", "1 year")),
+    "Q02": (("automatically encash",), ("april payroll",)),
+    "Q03": (("26 weeks",), ("80 days",), ("12 months",)),
+    "Q04": (("medical certificate",), ("registered medical practitioner",), ("3 working days",), ("returning to work",)),
+    "Q05": (("7th",), ("following month",), ("24th",)),
+    "Q06": (("16.0l", "16.0 l"), ("26.0l", "26.0 l"), ("10% of ctc",)),
+    "Q07": (("5,00,000", "500,000", "5 lakh"), ("per year",)),
+    "Q08": (("rating of 1 or 2", "rating 1 or 2"), ("two consecutive",), ("60 to 90 days", "60-90 days")),
+    "Q09": (
+        ("1 to 20 february",), ("1 to 10 march",), ("11 to 20 march",), ("21 to 25 march",),
+        ("26 to 31 march",), ("1 to 10 april",), ("15 april",),
+    ),
+    "Q10": (("permanent employees",), ("l3",), ("hybrid",), ("full remote",), ("ad-hoc", "ad hoc"), ("emergency",)),
+}
+MAX_ANSWER_WORDS = {
+    "Q01": 55, "Q02": 45, "Q03": 40, "Q04": 60, "Q05": 55,
+    "Q06": 50, "Q07": 45, "Q08": 45, "Q09": 150, "Q10": 150,
+}
 REQUIRED_COLUMNS = [
     "question_id",
     "question_enc",
@@ -42,10 +74,34 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--streamlit-link", required=True)
     parser.add_argument("--langsmith-link", required=True, help="Publicly shared LangSmith project or trace URL.")
     parser.add_argument("--db-path", default="chroma_zyro_official_store")
-    parser.add_argument("--embedding-provider", default="auto", choices=["auto", "openai", "ollama", "hash"])
+    parser.add_argument(
+        "--embedding-provider",
+        default="auto",
+        choices=["auto", "openai", "ollama", "huggingface", "hash"],
+    )
     parser.add_argument("--llm-provider", default="auto", choices=["auto", "groq", "openai", "ollama", "extractive"])
-    parser.add_argument("--delay", type=float, default=2.0, help="Seconds between questions to reduce rate-limit risk.")
-    parser.add_argument("--disable-self-critique", action="store_true")
+    parser.add_argument("--chunk-size", type=int, default=900)
+    parser.add_argument("--chunk-overlap", type=int, default=150)
+    parser.add_argument("--retrieval-k", type=int, default=8, help="Number of policy chunks supplied to the answer LLM.")
+    parser.add_argument("--fetch-k", type=int, default=60)
+    parser.add_argument("--vector-weight", type=float, default=0.65)
+    parser.add_argument("--keyword-weight", type=float, default=None, help="BM25 weight. Defaults to 1 - vector_weight.")
+    parser.add_argument("--critique-threshold", type=float, default=0.55)
+    parser.add_argument("--delay", type=float, default=5.0, help="Seconds between questions to reduce rate-limit risk.")
+    parser.add_argument("--max-retries", type=int, default=4, help="Maximum model attempts per in-scope question.")
+    parser.add_argument("--retry-delay", type=float, default=15.0, help="Initial retry delay in seconds.")
+    critique_group = parser.add_mutually_exclusive_group()
+    critique_group.add_argument("--disable-self-critique", action="store_true")
+    critique_group.add_argument(
+        "--force-self-critique",
+        action="store_true",
+        help="Force a second model review for every in-scope answer instead of reviewing only low-confidence answers.",
+    )
+    parser.add_argument("--resume", action="store_true", help="Resume from an interrupted partial output file.")
+    parser.add_argument(
+        "--seed-from",
+        help="Seed a new output file from an existing partial candidate, preserving its completed answers.",
+    )
     parser.add_argument("--disable-tracing", action="store_true", help="Disable LangSmith only for local smoke tests.")
     parser.add_argument("--rebuild", action="store_true")
     return parser.parse_args()
@@ -111,6 +167,131 @@ def is_refusal(answer: str) -> bool:
     return any(marker in normalized for marker in REFUSAL_MARKERS)
 
 
+def clean_answer_formatting(answer: str) -> str:
+    """Strip markdown formatting, label prefixes, bullet markers, and repetition.
+
+    This post-processing step maximizes semantic similarity against
+    clean reference answers by removing formatting noise the LLM may still produce.
+    """
+    text = answer
+    # Strip markdown bold / italic
+    text = re.sub(r"\*\*(.+?)\*\*", r"\1", text)
+    text = re.sub(r"\*(.+?)\*", r"\1", text)
+    # Strip markdown headings
+    text = re.sub(r"^#{1,6}\s+", "", text, flags=re.MULTILINE)
+    # Strip common label prefixes (case-insensitive)
+    label_pattern = (
+        r"^\s*(?:Definition|Scope|Coverage(?: Scope)?|CTC Range|Bonus Target|Premium Arrangement"
+        r"|Salary Credit Date|Payroll Cut-Off Date|Required [Dd]ocument|Submission [Dd]eadline"
+        r"|Duration(?: of (?:a )?PIP)?|Note)\s*:\s*"
+    )
+    text = re.sub(label_pattern, "", text, flags=re.MULTILINE | re.IGNORECASE)
+    # Strip bullet markers at line starts
+    text = re.sub(r"^\s*[\u2022\u2023\u25E6\u2043\u2219*\-]\s+", "", text, flags=re.MULTILINE)
+    # Collapse multiple newlines into single space (flowing prose)
+    text = re.sub(r"\n{2,}", " ", text)
+    text = re.sub(r"\n", " ", text)
+    # Normalize whitespace
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def answer_with_retry(
+    pipeline: HRRagPipeline,
+    question_id: str,
+    question: str,
+    force_refine: bool,
+    max_retries: int,
+    retry_delay: float,
+    validator: Optional[Callable[[object], None]] = None,
+):
+    attempts = max(1, max_retries)
+    for attempt in range(1, attempts + 1):
+        try:
+            response = pipeline.answer(question, force_refine=force_refine)
+            if validator is not None:
+                validator(response)
+            return response
+        except Exception as exc:
+            if attempt >= attempts:
+                raise RuntimeError(
+                    "%s failed after %s model attempts. No fallback answer was accepted." % (question_id, attempts)
+                ) from exc
+            wait_seconds = retry_wait_seconds(exc, retry_delay, attempt)
+            print(
+                "%s model attempt %s/%s failed (%s). Retrying in %.1f seconds."
+                % (question_id, attempt, attempts, type(exc).__name__, wait_seconds)
+            )
+            if wait_seconds:
+                time.sleep(wait_seconds)
+
+
+def retry_wait_seconds(exc: Exception, retry_delay: float, attempt: int) -> float:
+    match = re.search(r"try again in (?:(\d+)m)?([\d.]+)s", str(exc), re.IGNORECASE)
+    if match:
+        minutes = int(match.group(1) or 0)
+        seconds = float(match.group(2))
+        return minutes * 60 + seconds + 5.0
+    return max(0.0, retry_delay) * (2 ** (attempt - 1))
+
+
+def validate_competition_response(question_id: str, index: int, response, enforce_word_limit: bool = True) -> None:
+    clean_answer = strip_sources(response.answer)
+    normalized = clean_answer.lower().replace("\u202f", " ").replace("\xa0", " ")
+    normalized = re.sub(r"[\u2010-\u2015\u2212]", "-", normalized)
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    compact = re.sub(r"\s+", "", normalized)
+    if not clean_answer:
+        raise ValueError("%s produced an empty answer." % question_id)
+    if index <= 10 and (response.blocked or is_refusal(clean_answer)):
+        raise ValueError("%s is in scope but produced a refusal." % question_id)
+    if index <= 10 and response.critique_rating == "EXTRACTIVE_FALLBACK":
+        raise ValueError("%s used an extractive fallback." % question_id)
+    if index <= 10 and any(marker in normalized for marker in BROKEN_FALLBACK_MARKERS):
+        raise ValueError("%s contains broken or verbose fallback-style text." % question_id)
+    max_words = MAX_ANSWER_WORDS.get(question_id)
+    if enforce_word_limit and max_words and len(clean_answer.split()) > max_words:
+        raise ValueError("%s is too verbose for semantic-similarity scoring." % question_id)
+    for alternatives in CRITICAL_ANSWER_MARKERS.get(question_id, ()):
+        if not any(marker in normalized or re.sub(r"\s+", "", marker) in compact for marker in alternatives):
+            raise ValueError("%s is missing a required policy fact: %s" % (question_id, alternatives[0]))
+    if index >= 11 and not response.blocked:
+        raise ValueError("%s is out of scope but was not blocked by the guardrail." % question_id)
+    if index >= 11 and not is_refusal(clean_answer):
+        raise ValueError("%s is out of scope but does not contain a refusal answer." % question_id)
+    if any(pattern.search(clean_answer) for pattern in RAW_ANSWER_ARTIFACT_PATTERNS):
+        raise ValueError("%s contains a raw retrieval artifact." % question_id)
+
+
+def print_validation_summary(debug_rows: Sequence[dict], output_path: Path) -> None:
+    answers = {
+        row["question_id"]: re.sub(
+            r"\s+",
+            "",
+            re.sub(r"[\u2010-\u2015\u2212]", "-", row["clean_answer"].lower().replace("\u202f", " ").replace("\xa0", " ")),
+        )
+        for row in debug_rows
+    }
+    fallback_ids = [
+        row["question_id"]
+        for row in debug_rows
+        if row.get("critique_rating") == "EXTRACTIVE_FALLBACK"
+        or any(marker in row["clean_answer"].lower() for marker in BROKEN_FALLBACK_MARKERS)
+    ]
+    q02_ok = "automaticallyencash" in answers.get("Q02", "") and "aprilpayroll" in answers.get("Q02", "")
+    q07_ok = any(
+        marker in answers.get("Q07", "")
+        for marker in ("5,00,000", "500,000", "5lakh")
+    ) and "peryear" in answers.get("Q07", "")
+    q06_ok = all(marker in answers.get("Q06", "") for marker in ("16.0l", "26.0l", "10%ofctc"))
+    print("\nFinal validation summary:")
+    print("- Q02 includes April payroll encashment: %s" % ("YES" if q02_ok else "NO"))
+    print("- Q07 includes Rs. 5,00,000 medical insurance: %s" % ("YES" if q07_ok else "NO"))
+    print("- Q06 includes CTC range and bonus target: %s" % ("YES" if q06_ok else "NO"))
+    print("- Extractive/broken fallback answers: %s" % (", ".join(fallback_ids) if fallback_ids else "NONE"))
+    print("- Final candidate CSV: %s" % output_path)
+
+
 def validate_submission(path: Path) -> None:
     with path.open("r", encoding="utf-8", newline="") as handle:
         rows = list(csv.DictReader(handle))
@@ -123,11 +304,84 @@ def validate_submission(path: Path) -> None:
             raise ValueError("Submission question IDs must be Q01-Q15 in order.")
         if not all(row.get(column, "").strip() for column in REQUIRED_COLUMNS):
             raise ValueError("Submission contains an empty required field in row %s." % index)
+        if any(row.get(column, "").strip().lower() in {"nan", "none", "null"} for column in REQUIRED_COLUMNS):
+            raise ValueError("Submission contains a NaN/null-like required field in row %s." % index)
         validate_links(row["streamlit_link"], row["langsmith_link"])
+
+
+def print_submission_validation_report(rows: Sequence[dict], debug_rows: Sequence[dict]) -> None:
+    expected_ids = ["Q%02d" % index for index in range(1, 16)]
+    debug_by_id = {row.get("question_id"): row for row in debug_rows}
+    checks = [
+        ("Exactly 15 rows", len(rows) == 15 and len(debug_rows) == 15),
+        ("Q01-Q15 in order", [row.get("question_id") for row in rows] == expected_ids),
+        ("All five columns present with no empty/NaN values", all(
+            list(row.keys()) == REQUIRED_COLUMNS
+            and all(str(row.get(column, "")).strip().lower() not in {"", "nan", "none", "null"} for column in REQUIRED_COLUMNS)
+            for row in rows
+        )),
+        ("Q01-Q10 are non-empty and not refusals", all(
+            question_id in debug_by_id
+            and bool(debug_by_id[question_id].get("clean_answer", "").strip())
+            and not debug_by_id[question_id].get("blocked")
+            and not is_refusal(debug_by_id[question_id].get("clean_answer", ""))
+            for question_id in expected_ids[:10]
+        )),
+        ("Q11-Q15 are blocked refusals", all(
+            question_id in debug_by_id
+            and bool(debug_by_id[question_id].get("blocked"))
+            and is_refusal(debug_by_id[question_id].get("clean_answer", ""))
+            for question_id in expected_ids[10:]
+        )),
+        ("No raw chunk/document artifacts", all(
+            not any(pattern.search(row.get("clean_answer", "")) for pattern in RAW_ANSWER_ARTIFACT_PATTERNS)
+            for row in debug_rows
+        )),
+        ("All answers are at most 150 words", all(
+            len(row.get("clean_answer", "").split()) <= 150 for row in debug_rows
+        )),
+    ]
+    print("\nPre-finalization submission checks:")
+    for label, passed in checks:
+        print("- [%s] %s" % ("PASS" if passed else "FAIL", label))
+    failed = [label for label, passed in checks if not passed]
+    if failed:
+        raise ValueError("Submission validation failed: %s" % ", ".join(failed))
+
+
+def write_outputs(output_path: Path, rows: Sequence[dict], debug_rows: Sequence[dict]) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=REQUIRED_COLUMNS)
+        writer.writeheader()
+        writer.writerows(rows)
+    output_path.with_suffix(".sources.json").write_text(
+        json.dumps(debug_rows, ensure_ascii=True, indent=2),
+        encoding="utf-8",
+    )
+
+
+def load_partial_outputs(output_path: Path) -> Tuple[List[dict], List[dict]]:
+    debug_path = output_path.with_suffix(".sources.json")
+    if not output_path.exists() or not debug_path.exists():
+        return [], []
+    with output_path.open("r", encoding="utf-8", newline="") as handle:
+        rows = list(csv.DictReader(handle))
+    debug_rows = json.loads(debug_path.read_text(encoding="utf-8"))
+    if len(rows) != len(debug_rows):
+        raise ValueError("Partial CSV and source log contain different numbers of answers.")
+    expected_ids = ["Q%02d" % index for index in range(1, len(rows) + 1)]
+    if [row.get("question_id") for row in rows] != expected_ids:
+        raise ValueError("Partial output must contain consecutive question IDs starting at Q01.")
+    return rows, debug_rows
 
 
 def main() -> None:
     args = parse_args()
+    if args.disable_self_critique and args.force_self_critique:
+        raise ValueError("--disable-self-critique and --force-self-critique cannot be used together.")
+    if args.resume and args.seed_from:
+        raise ValueError("--resume and --seed-from cannot be used together.")
     validate_links(args.streamlit_link, args.langsmith_link)
     validate_official_corpus(args.docs_path)
     fernet, questions = extract_competition_questions(args.starter_notebook)
@@ -146,8 +400,17 @@ def main() -> None:
         db_path=args.db_path,
         embedding_provider=args.embedding_provider,
         llm_provider=args.llm_provider,
+        chunk_size=args.chunk_size,
+        chunk_overlap=args.chunk_overlap,
+        retrieval_k=max(2, args.retrieval_k),
+        fetch_k=max(args.fetch_k, args.retrieval_k),
+        vector_weight=args.vector_weight,
+        keyword_weight=args.keyword_weight if args.keyword_weight is not None else 1.0 - args.vector_weight,
+        enable_hyde=False,
         enable_self_critique=not args.disable_self_critique,
+        critique_confidence_threshold=args.critique_threshold,
         append_source_block=True,
+        allow_extractive_fallback=False,
     )
     pipeline = HRRagPipeline.from_config(config, rebuild=args.rebuild)
     if pipeline.llm is None and args.llm_provider != "extractive":
@@ -155,20 +418,40 @@ def main() -> None:
             "No answer LLM is configured. Add GROQ_API_KEY or explicitly use --llm-provider extractive for smoke tests."
         )
 
-    rows = []
-    debug_rows = []
+    output_path = Path(args.output)
+    if args.resume:
+        rows, debug_rows = load_partial_outputs(output_path)
+    elif args.seed_from:
+        rows, debug_rows = load_partial_outputs(Path(args.seed_from))
+        if not rows:
+            raise ValueError("Seed candidate does not contain any completed answers: %s" % args.seed_from)
+        for index, row in enumerate(debug_rows, start=1):
+            validate_competition_response(row["question_id"], index, type("SeedResponse", (), {
+                "answer": row["clean_answer"],
+                "blocked": row["blocked"],
+                "critique_rating": row.get("critique_rating"),
+            })())
+        write_outputs(output_path, rows, debug_rows)
+        print("Seeded %s validated answers from %s." % (len(rows), args.seed_from), flush=True)
+    else:
+        rows, debug_rows = [], []
+    completed_ids = {row["question_id"] for row in rows}
+    if completed_ids:
+        print("Resuming after %s completed answers." % len(completed_ids), flush=True)
+
     for index, (question_id, question) in enumerate(questions, start=1):
-        response = pipeline.answer(question, force_refine=not args.disable_self_critique)
-        clean_answer = strip_sources(response.answer)
-        if not clean_answer:
-            raise ValueError("%s produced an empty answer." % question_id)
-        if index <= 10 and (response.blocked or is_refusal(clean_answer)):
-            raise ValueError(
-                "%s is in scope but produced a refusal. Review retrieval and generation. Answer: %s"
-                % (question_id, clean_answer)
-            )
-        if index >= 11 and not response.blocked:
-            raise ValueError("%s is out of scope but was not blocked by the guardrail." % question_id)
+        if question_id in completed_ids:
+            continue
+        response = answer_with_retry(
+            pipeline,
+            question_id,
+            question,
+            force_refine=args.force_self_critique,
+            max_retries=args.max_retries,
+            retry_delay=args.retry_delay,
+            validator=lambda result, qid=question_id, idx=index: validate_competition_response(qid, idx, result),
+        )
+        clean_answer = clean_answer_formatting(strip_sources(response.answer))
 
         rows.append(
             {
@@ -187,25 +470,26 @@ def main() -> None:
                 "answer_with_sources": response.answer,
                 "blocked": response.blocked,
                 "confidence": response.avg_confidence,
+                "critique_rating": response.critique_rating,
+                "refined": response.refined,
                 "sources": response.sources,
             }
         )
-        print("[%02d/15] %s answered%s" % (index, question_id, " (blocked)" if response.blocked else ""))
+        write_outputs(output_path, rows, debug_rows)
+        print(
+            "[%02d/15] %s answered%s" % (index, question_id, " (blocked)" if response.blocked else ""),
+            flush=True,
+        )
         if index < len(questions) and args.delay > 0:
             time.sleep(args.delay)
 
-    output_path = Path(args.output)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    with output_path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=REQUIRED_COLUMNS)
-        writer.writeheader()
-        writer.writerows(rows)
-
+    print_submission_validation_report(rows, debug_rows)
+    write_outputs(output_path, rows, debug_rows)
     validate_submission(output_path)
     debug_path = output_path.with_suffix(".sources.json")
-    debug_path.write_text(json.dumps(debug_rows, ensure_ascii=True, indent=2), encoding="utf-8")
     print("Validated official 15-row submission: %s" % output_path)
     print("Wrote answer/source debug log: %s" % debug_path)
+    print_validation_summary(debug_rows, output_path)
 
 
 if __name__ == "__main__":

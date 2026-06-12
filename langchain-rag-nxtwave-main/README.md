@@ -36,6 +36,7 @@ Copy `.env.example` to `.env` and fill only the keys you are allowed to use. Do 
 The pipeline auto-selects providers:
 
 - If `OPENAI_API_KEY` exists, OpenAI embeddings are used.
+- Select `huggingface` to use local `sentence-transformers/all-MiniLM-L6-v2` embeddings.
 - If `GROQ_API_KEY` exists, Groq is used for generation.
 - If no API keys exist, local hash embeddings and extractive answers keep the pipeline runnable offline.
 
@@ -92,6 +93,25 @@ python generate_competition_submission.py `
   --langsmith-link "https://smith.langchain.com/public/YOUR-TRACE/r" `
   --embedding-provider hash `
   --llm-provider groq `
+  --chunk-size 900 `
+  --chunk-overlap 150 `
+  --retrieval-k 8 `
+  --fetch-k 60 `
+  --vector-weight 0.65 `
+  --disable-self-critique `
+  --rebuild
+```
+
+For stronger local semantic embeddings without an API:
+
+```powershell
+python generate_competition_submission.py `
+  --streamlit-link "https://YOUR-APP.streamlit.app" `
+  --langsmith-link "https://smith.langchain.com/public/YOUR-TRACE/r" `
+  --embedding-provider huggingface `
+  --llm-provider groq `
+  --retrieval-k 8 `
+  --fetch-k 60 `
   --rebuild
 ```
 
@@ -204,12 +224,12 @@ For the actual competition, replace `eval/hr_validation_sample.jsonl` with a 30-
 
 Tune against a small validation set before submitting:
 
-- Try `chunk_size` values around `700`, `900`, and `1100`.
-- Try `chunk_overlap` values `150`, `180`, and `220`.
+- Try `chunk_size` values `600`, `700`, `800`, and `900`.
+- Try `chunk_overlap` values `150`, `200`, and `250`.
 - Try `retrieval_k` values `6`, `8`, and `10`.
-- Try `fetch_k` values `24`, `36`, and `48`.
-- Try vector/BM25 weights of `0.50/0.50`, `0.60/0.40`, and `0.70/0.30`.
-- The current tuned default is `chunk_size=700`, `chunk_overlap=150`, `retrieval_k=6`, `fetch_k=48`, and vector/BM25 `0.60/0.40`.
+- Try `fetch_k` values `48` and `60`.
+- Try vector/BM25 weights of `0.55/0.45`, `0.65/0.35`, and `0.70/0.30`.
+- The selected proxy-validation configuration is `chunk_size=900`, `chunk_overlap=150`, `retrieval_k=8`, `fetch_k=60`, and vector/BM25 `0.65/0.35`.
 - Inspect the generated `.sources.json` file after every run to confirm the right policies were retrieved.
 - Prefer grounded answers over broad explanations. The competition will likely reward answers that match the internal policy text.
 - Keep guardrails strict for non-HR, sensitive personal data, credentials, and unsupported questions.
