@@ -205,6 +205,8 @@ LEGAL_ADVICE_PATTERNS = [
     re.compile(r"\b(can|should)\s+i\s+(sue|file a lawsuit|take legal action)\b", re.I),
 ]
 
+REFUSAL_TEXT = "I can only answer HR-related questions from Zyro Dynamics policy documents."
+
 POLICY_SOURCE_ROUTES = [
     (("work from home", "wfh", "hybrid", "full remote", "ad-hoc wfh", "emergency wfh"), "03_Work_From_Home_Policy.pdf"),
     (("earned leave", "sick leave", "maternity leave", "paternity leave", "leave"), "02_Leave_Policy.pdf"),
@@ -539,7 +541,7 @@ class HRRagPipeline:
         guard_ok, reason = self._guardrail(question)
         if not guard_ok:
             return HRRagResponse(
-                answer=reason or "I can only answer Zyro Dynamics HR policy questions.",
+                answer=reason or REFUSAL_TEXT,
                 sources=[],
                 blocked=True,
                 reason=reason,
@@ -740,8 +742,8 @@ class HRRagPipeline:
                         "- Copy key policy phrases, numbers, dates, percentages, amounts, and named terms "
                         "verbatim from the excerpts. Do not paraphrase them.\n"
                         "- Answer every part of the question, but include no unasked background or general HR knowledge.\n"
-                        "- Use two to four concise sentences maximum, except when a complete requested timeline "
-                        "requires a numbered list.\n"
+                        "- Use two to three concise sentences where possible. Do not pad a complete short answer. "
+                        "Use a numbered list when the question requests a complete timeline or process.\n"
                         "- If a question asks about a policy limit or carry-forward rule, include the directly stated "
                         "consequence of exceeding that limit when it appears in the excerpts.\n"
                         "- Follow the answer style instruction exactly.\n"
@@ -897,13 +899,13 @@ class HRRagPipeline:
                 )
 
         if any(pattern.search(q) for pattern in EXTERNAL_ORGANIZATION_PATTERNS):
-            return False, "I can only answer HR-related questions from Zyro Dynamics policy documents."
+            return False, REFUSAL_TEXT
 
         if any(pattern.search(q) for pattern in LEGAL_ADVICE_PATTERNS):
-            return False, "I can only answer HR-related questions from Zyro Dynamics policy documents."
+            return False, REFUSAL_TEXT
 
         if any(term in q_lower for term in OBVIOUS_OUT_OF_SCOPE):
-            return False, "I can only answer HR-related questions from Zyro Dynamics policy documents."
+            return False, REFUSAL_TEXT
 
         if any(term in q_lower for term in HR_KEYWORDS):
             return True, None
@@ -914,7 +916,7 @@ class HRRagPipeline:
         if any(term in q_lower for term in workplace_signals):
             return True, None
 
-        return False, "I can only answer questions about Zyro Dynamics HR policies and employee processes."
+        return False, REFUSAL_TEXT
 
 
 def load_policy_documents(docs_path: str) -> List[Document]:
@@ -1080,10 +1082,10 @@ def build_chat_model(provider: str = "auto", temperature: float = 0.0):
         return ChatGroq(
             model=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
             temperature=temperature,
-            model_kwargs={"top_p": float(os.getenv("GROQ_TOP_P", "0.9"))},
+            model_kwargs={"top_p": float(os.getenv("GROQ_TOP_P", "1.0"))},
             timeout=float(os.getenv("GROQ_REQUEST_TIMEOUT", "90")),
             max_retries=int(os.getenv("GROQ_MAX_RETRIES", "0")),
-            max_tokens=int(os.getenv("GROQ_MAX_TOKENS", "500")),
+            max_tokens=int(os.getenv("GROQ_MAX_TOKENS", "200")),
         )
     if selected == "openai":
         from langchain_openai import ChatOpenAI

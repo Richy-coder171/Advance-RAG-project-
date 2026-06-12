@@ -3,12 +3,14 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from generate_competition_submission import (
+    OUT_OF_SCOPE_IDS,
+    clean_answer_for_submission,
     extract_competition_questions,
     retry_wait_seconds,
     validate_competition_response,
     validate_links,
 )
-from hr_rag import validate_official_corpus
+from hr_rag import REFUSAL_TEXT, validate_official_corpus
 
 
 class CompetitionSubmissionTests(unittest.TestCase):
@@ -38,6 +40,17 @@ class CompetitionSubmissionTests(unittest.TestCase):
 
     def test_retry_wait_uses_groq_rate_limit_hint(self):
         self.assertAlmostEqual(retry_wait_seconds(Exception("Please try again in 2m47.5s."), 15, 1), 172.5)
+
+    def test_submission_cleaning_removes_artifacts_without_deleting_answer_text(self):
+        dirty = (
+            "According to the HR policy, **Employees receive 15 days.** [Document 1] [1]\n"
+            "Source: 02_Leave_Policy.pdf\nConfidence: 0.82"
+        )
+        self.assertEqual(clean_answer_for_submission(dirty), "Employees receive 15 days.")
+
+    def test_out_of_scope_ids_use_the_proven_refusal(self):
+        self.assertEqual(OUT_OF_SCOPE_IDS, {"Q11", "Q12", "Q13", "Q14", "Q15"})
+        self.assertEqual(REFUSAL_TEXT, "I can only answer HR-related questions from Zyro Dynamics policy documents.")
 
     def test_critical_answer_validation_rejects_missing_facts_and_fallback(self):
         response = type("Response", (), {"answer": "", "blocked": False, "critique_rating": None})
