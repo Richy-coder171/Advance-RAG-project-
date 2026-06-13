@@ -68,6 +68,12 @@ CRITICAL_ANSWER_MARKERS = {
     ),
     "Q10": (("permanent employees",), ("l3",), ("hybrid",), ("full remote",), ("ad-hoc", "ad hoc"), ("emergency",)),
 }
+COMPETITION_ANSWER_REQUIREMENTS = {
+    "Q10": (
+        "Explicitly state that all permanent employees at grade L3 and above are eligible before "
+        "describing Hybrid WFH, Full Remote, Ad-hoc WFH, and Emergency WFH."
+    ),
+}
 MAX_ANSWER_WORDS = {
     "Q01": 55, "Q02": 45, "Q03": 40, "Q04": 60, "Q05": 55,
     "Q06": 50, "Q07": 45, "Q08": 45, "Q09": 150, "Q10": 150,
@@ -520,10 +526,16 @@ def main() -> None:
             write_outputs(output_path, rows, debug_rows)
             print("[REFUSAL] %s: hardcoded refusal applied" % question_id, flush=True)
             continue
+        generation_question = question
+        if question_id in COMPETITION_ANSWER_REQUIREMENTS:
+            generation_question = "%s\n\nAnswer requirement: %s" % (
+                question,
+                COMPETITION_ANSWER_REQUIREMENTS[question_id],
+            )
         response = answer_with_retry(
             pipeline,
             question_id,
-            question,
+            generation_question,
             force_refine=args.force_self_critique,
             max_retries=args.max_retries,
             retry_delay=args.retry_delay,
