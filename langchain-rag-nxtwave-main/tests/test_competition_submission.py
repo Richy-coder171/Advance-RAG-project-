@@ -4,13 +4,14 @@ from tempfile import TemporaryDirectory
 
 from generate_competition_submission import (
     OUT_OF_SCOPE_IDS,
+    REFUSAL_ANSWER,
     clean_answer_for_submission,
     extract_competition_questions,
     retry_wait_seconds,
     validate_competition_response,
     validate_links,
 )
-from hr_rag import REFUSAL_TEXT, validate_official_corpus
+from hr_rag import validate_official_corpus
 
 
 class CompetitionSubmissionTests(unittest.TestCase):
@@ -44,13 +45,28 @@ class CompetitionSubmissionTests(unittest.TestCase):
     def test_submission_cleaning_removes_artifacts_without_deleting_answer_text(self):
         dirty = (
             "According to the HR policy, **Employees receive 15 days.** [Document 1] [1]\n"
-            "Source: 02_Leave_Policy.pdf\nConfidence: 0.82"
+            "1. Apply through the portal.\nSource: 02_Leave_Policy.pdf\n"
+            "Confidence: 0.82\nRetrieved from: leave chunks"
         )
-        self.assertEqual(clean_answer_for_submission(dirty), "Employees receive 15 days.")
+        self.assertEqual(
+            clean_answer_for_submission(dirty),
+            "Employees receive 15 days. Apply through the portal.",
+        )
+        timeline = "1. First stage: February 2. Second stage: March 3. Final stage: April"
+        self.assertEqual(
+            clean_answer_for_submission(timeline),
+            "First stage: February Second stage: March Final stage: April",
+        )
+        self.assertEqual(clean_answer_for_submission("Eligible employees • Hybrid WFH • Full Remote"), "Eligible employees Hybrid WFH Full Remote")
 
-    def test_out_of_scope_ids_use_the_proven_refusal(self):
+    def test_out_of_scope_ids_use_the_locked_refusal(self):
         self.assertEqual(OUT_OF_SCOPE_IDS, {"Q11", "Q12", "Q13", "Q14", "Q15"})
-        self.assertEqual(REFUSAL_TEXT, "I can only answer HR-related questions from Zyro Dynamics policy documents.")
+        self.assertEqual(
+            REFUSAL_ANSWER,
+            "I'm sorry, I can only answer questions related to Zyro Dynamics HR policies. "
+            "This question is outside the scope of the available HR policy documentation.",
+        )
+        self.assertEqual(clean_answer_for_submission(REFUSAL_ANSWER), REFUSAL_ANSWER)
 
     def test_critical_answer_validation_rejects_missing_facts_and_fallback(self):
         response = type("Response", (), {"answer": "", "blocked": False, "critique_rating": None})
@@ -72,6 +88,9 @@ class CompetitionSubmissionTests(unittest.TestCase):
         validate_competition_response("Q06", 6, response)
 
         response.answer = "L4 Senior: Rs. 16.0L to Rs. 26.0L; bonus target: 10% of CTC. [Document 3]"
+        validate_competition_response("Q06", 6, response)
+
+        response.answer = "L4 Senior: Rs. 16.0L to Rs. 26.0L; bonus target: 10% of CTC. Chunk ID: 3"
         with self.assertRaises(ValueError):
             validate_competition_response("Q06", 6, response)
 

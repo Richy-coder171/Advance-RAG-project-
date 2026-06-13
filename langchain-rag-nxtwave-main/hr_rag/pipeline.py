@@ -231,6 +231,13 @@ def answer_style_instruction(question: str) -> str:
         else ""
     )
 
+    if ("work from home" in q or "wfh" in q) and ("type" in q or "arrangement" in q):
+        return (
+            "First state the general eligibility rule, including employment status and minimum grade. "
+            "Then name Hybrid WFH, Full Remote, Ad-hoc WFH, and Emergency WFH with each arrangement's "
+            "eligibility and maximum days per week. Use plain prose with no markdown." + completeness
+        )
+
     if re.search(r"\b(timeline|schedule|stages?|steps?|process|procedure)\b", q):
         return (
             "Use numbered steps in chronological order. Include every stage, date, deadline, or owner "
@@ -1085,7 +1092,7 @@ def build_chat_model(provider: str = "auto", temperature: float = 0.0):
             model_kwargs={"top_p": float(os.getenv("GROQ_TOP_P", "1.0"))},
             timeout=float(os.getenv("GROQ_REQUEST_TIMEOUT", "90")),
             max_retries=int(os.getenv("GROQ_MAX_RETRIES", "0")),
-            max_tokens=int(os.getenv("GROQ_MAX_TOKENS", "200")),
+            max_tokens=int(os.getenv("GROQ_MAX_TOKENS", "180")),
         )
     if selected == "openai":
         from langchain_openai import ChatOpenAI

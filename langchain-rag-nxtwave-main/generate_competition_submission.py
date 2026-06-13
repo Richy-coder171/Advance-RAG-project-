@@ -13,9 +13,14 @@ from typing import Callable, List, Optional, Sequence, Tuple
 from cryptography.fernet import Fernet
 
 from evaluate_hr_rag import strip_sources
-from hr_rag import HRRagConfig, HRRagPipeline, REFUSAL_TEXT, validate_official_corpus
+from hr_rag import HRRagConfig, HRRagPipeline, validate_official_corpus
 
 
+REFUSAL_ANSWER = (
+    "I'm sorry, I can only answer questions related to Zyro Dynamics "
+    "HR policies. This question is outside the scope of the available "
+    "HR policy documentation."
+)
 OUT_OF_SCOPE_IDS = {"Q11", "Q12", "Q13", "Q14", "Q15"}
 STREAMLIT_PATTERN = re.compile(r"^https://.+\.streamlit\.app(/.*)?$", re.IGNORECASE)
 LANGSMITH_PATTERN = re.compile(r"^https://smith\.langchain\.com/.+", re.IGNORECASE)
@@ -35,9 +40,18 @@ BROKEN_FALLBACK_MARKERS = (
 )
 RAW_ANSWER_ARTIFACT_PATTERNS = (
     re.compile(r"\[\s*document\s+\d+\s*\]", re.IGNORECASE),
+    re.compile(r"\[\s*source\s*:[^\]]*\]", re.IGNORECASE),
+    re.compile(r"\[\s*\d+\s*\]"),
     re.compile(r"\bchunk\s*(?:id)?\s*[:#]?\s*\d+\b", re.IGNORECASE),
     re.compile(r"\brelevance rank\s*:", re.IGNORECASE),
     re.compile(r"\bsource file\s*:", re.IGNORECASE),
+    re.compile(r"\bsources?\s*:", re.IGNORECASE),
+    re.compile(r"\bconfidence\s*:", re.IGNORECASE),
+    re.compile(r"\bretrieved from\s*:", re.IGNORECASE),
+    re.compile(r"^\s*(?:based on|according to)\s+(?:the\s+|zyro dynamics\s+)?(?:hr\s+)?policy\b", re.IGNORECASE),
+    re.compile(r"\*\*|#{1,6}\s+"),
+    re.compile(r"[\u2022\u00b7]"),
+    re.compile(r"^\s*(?:[-*]|\d+\.)\s+", re.MULTILINE),
 )
 CRITICAL_ANSWER_MARKERS = {
     "Q01": (("1.25",), ("15 days",), ("one year", "1 year")),
@@ -104,6 +118,11 @@ def parse_args() -> argparse.Namespace:
         help="Seed a new output file from an existing partial candidate, preserving its completed answers.",
     )
     parser.add_argument("--disable-tracing", action="store_true", help="Disable LangSmith only for local smoke tests.")
+    parser.add_argument(
+        "--disable-hyde",
+        action="store_true",
+        help="Compatibility flag. HyDE is always disabled for competition submission generation.",
+    )
     parser.add_argument("--rebuild", action="store_true")
     return parser.parse_args()
 
@@ -168,24 +187,48 @@ def is_refusal(answer: str) -> bool:
     return any(marker in normalized for marker in REFUSAL_MARKERS)
 
 
-def clean_answer_for_submission(answer: str) -> str:
-    """Remove UI/retrieval artifacts while preserving answer wording."""
-    text = answer
-    text = re.sub(r"\[\s*Document\s*\d+\s*\]", " ", text, flags=re.IGNORECASE)
-    text = re.sub(r"\[\s*Source\s*:[^\]]+\]", " ", text, flags=re.IGNORECASE)
-    text = re.sub(r"(?:^|\n)\s*Sources?\s*:.*?(?=\n|$)", " ", text, flags=re.IGNORECASE)
-    text = re.sub(r"(?:^|\n)\s*Confidence\s*:.*?(?=\n|$)", " ", text, flags=re.IGNORECASE)
-    text = re.sub(r"\[\s*\d+\s*\]", " ", text)
-    text = re.sub(r"\[\s*\d+\s+from\s+[^\]]+\]", " ", text, flags=re.IGNORECASE)
-    text = re.sub(r"\[\s*[^\]]+\s+chunk\s+\d+\s*\]", " ", text, flags=re.IGNORECASE)
-    text = re.sub(r"\b(?:Based on|According to)\s+the\s+.*?policy\s*[,.]\s*", "", text, flags=re.IGNORECASE)
-    text = re.sub(r"\*\*(.+?)\*\*", r"\1", text)
-    text = re.sub(r"\*(.+?)\*", r"\1", text)
+def clean_answer_for_submission(text: str) -> str:
+    """Remove all RAG artifacts before encryption. Returns plain prose only."""
+    if not text:
+        return text
+
+    text = re.sub(r"\[\s*Document\s*\d+\s*\]", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\[\s*Source\s*:[^\]]*\]", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\[\s*\d+\s*\]", "", text)
+    text = re.sub(r"\[\s*\d+\s+from\s+[^\]]+\]", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\[\s*[^\]]+\s+chunk\s+\d+\s*\]", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"(?:^|\n)\s*Sources?\s*:[^\n]+", "", text, flags=re.IGNORECASE)
+
+    text = re.sub(r"\*\*([^*]+)\*\*", r"\1", text)
+    text = re.sub(r"\*([^*]+)\*", r"\1", text)
     text = re.sub(r"^#{1,6}\s+", "", text, flags=re.MULTILINE)
-    text = re.sub(r"^\s*[\u2022\u2023\u25E6\u2043\u2219*-]\s+", "", text, flags=re.MULTILINE)
+
+    text = re.sub(r"\s*[\u2022\u00b7]\s+", " ", text)
+    text = re.sub(r"^\s*-\s+", "", text, flags=re.MULTILINE)
+    text = re.sub(r"^\s*\d+\.\s+", "", text, flags=re.MULTILINE)
+    numbered_markers = re.compile(r"(?<![\w.])\d+\.\s+(?=[A-Z])")
+    if len(numbered_markers.findall(text)) >= 2:
+        text = numbered_markers.sub("", text)
+
+    text = re.sub(r"(?:^|\n)\s*Confidence\s*:[^\n]+", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"(?:^|\n)\s*Retrieved from\s*:[^\n]+", "", text, flags=re.IGNORECASE)
+
+    text = re.sub(
+        r"^(?:Based on|According to)\s+(?:(?:the|Zyro Dynamics)\s+)?HR policy[,.]?\s*",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(
+        r"^According to\s+(?:the\s+)?policy[,.]?\s*",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+
+    text = re.sub(r"\n{2,}", "\n", text)
     text = re.sub(r"\s+([.,;:!?])", r"\1", text)
-    text = re.sub(r"\s+", " ", text).strip()
-    return text
+    return " ".join(text.split()).strip()
 
 
 def clean_answer_formatting(answer: str) -> str:
@@ -233,7 +276,7 @@ def retry_wait_seconds(exc: Exception, retry_delay: float, attempt: int) -> floa
 
 
 def validate_competition_response(question_id: str, index: int, response, enforce_word_limit: bool = True) -> None:
-    clean_answer = strip_sources(response.answer)
+    clean_answer = clean_answer_for_submission(strip_sources(response.answer))
     normalized = clean_answer.lower().replace("\u202f", " ").replace("\xa0", " ")
     normalized = re.sub(r"[\u2010-\u2015\u2212]", "-", normalized)
     normalized = re.sub(r"\s+", " ", normalized).strip()
@@ -450,7 +493,7 @@ def main() -> None:
         if question_id in completed_ids:
             continue
         if question_id in OUT_OF_SCOPE_IDS:
-            clean_answer = REFUSAL_TEXT
+            clean_answer = clean_answer_for_submission(REFUSAL_ANSWER)
             rows.append(
                 {
                     "question_id": question_id,
@@ -475,7 +518,7 @@ def main() -> None:
                 }
             )
             write_outputs(output_path, rows, debug_rows)
-            print("[%02d/15] %s answered (hardcoded guardrail)" % (index, question_id), flush=True)
+            print("[REFUSAL] %s: hardcoded refusal applied" % question_id, flush=True)
             continue
         response = answer_with_retry(
             pipeline,
@@ -490,6 +533,8 @@ def main() -> None:
         clean_answer = clean_answer_for_submission(raw_answer)
         print("[%s] before cleaning: %s" % (question_id, raw_answer), flush=True)
         print("[%s] after cleaning:  %s" % (question_id, clean_answer), flush=True)
+        if any(pattern.search(clean_answer) for pattern in RAW_ANSWER_ARTIFACT_PATTERNS):
+            raise ValueError("%s still contains a submission artifact after cleaning." % question_id)
 
         rows.append(
             {
