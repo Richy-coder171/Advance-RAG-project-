@@ -66,7 +66,10 @@ CRITICAL_ANSWER_MARKERS = {
     "Q07": (("5,00,000", "500,000", "5 lakh"), ("per year",)),
     "Q08": (("rating of 1 or 2", "rating 1 or 2"), ("two consecutive",), ("60 to 90 days", "60-90 days")),
     "Q09": (("1 to 20 february",), ("1 to 20 march",), ("26 to 31 march", "31 march"), ("15 april",)),
-    "Q10": (("permanent employees",), ("l3",), ("hybrid",), ("full remote",), ("ad-hoc", "ad hoc"), ("emergency",)),
+    "Q10": (
+        ("permanent employees",), ("l3",), ("hybrid",), ("full remote",), ("ad-hoc", "ad hoc"), ("emergency",),
+        ("3 days",), ("5 days",), ("2 days",), ("all employees",),
+    ),
 }
 COMPETITION_ANSWER_REQUIREMENTS = {
     "Q09": (
@@ -75,8 +78,10 @@ COMPETITION_ANSWER_REQUIREMENTS = {
         "26 to 31 March, and increment and promotion letters issued on 15 April."
     ),
     "Q10": (
-        "Use no more than 80 words. State that all permanent employees at grade L3 and above are eligible, "
-        "then concisely describe Hybrid WFH, Full Remote, Ad-hoc WFH, and Emergency WFH."
+        "Use exactly 3 plain prose sentences and no more than 80 words. State that all permanent employees at "
+        "grade L3 and above are eligible. Include Hybrid WFH up to 3 days per week, Full Remote up to 5 days "
+        "per week for L5 and above on a case-by-case basis, Ad-hoc WFH up to 2 days, and Emergency WFH for all "
+        "employees as directed by HR."
     ),
 }
 MAX_ANSWER_WORDS = {
@@ -327,6 +332,8 @@ def validate_competition_response(question_id: str, index: int, response, enforc
     max_words = MAX_ANSWER_WORDS.get(question_id)
     if enforce_word_limit and max_words and len(clean_answer.split()) > max_words:
         raise ValueError("%s is too verbose for semantic-similarity scoring." % question_id)
+    if index <= 10 and len(re.findall(r"[.!?](?:\s|$)", clean_answer)) > 3:
+        raise ValueError("%s exceeds the three-sentence plain-prose limit." % question_id)
     for alternatives in CRITICAL_ANSWER_MARKERS.get(question_id, ()):
         if not any(marker in normalized or re.sub(r"\s+", "", marker) in compact for marker in alternatives):
             raise ValueError("%s is missing a required policy fact: %s" % (question_id, alternatives[0]))
@@ -424,6 +431,10 @@ def print_submission_validation_report(rows: Sequence[dict], debug_rows: Sequenc
         )),
         ("All answers are at most 80 words", all(
             len(row.get("clean_answer", "").split()) <= 80 for row in debug_rows
+        )),
+        ("Q01-Q10 use at most three prose sentences", all(
+            len(re.findall(r"[.!?](?:\s|$)", debug_by_id.get(question_id, {}).get("clean_answer", ""))) <= 3
+            for question_id in expected_ids[:10]
         )),
         ("Q09 uses at most four prose sentences", len(re.findall(r"[.!?](?:\s|$)", debug_by_id.get("Q09", {}).get("clean_answer", ""))) <= 4),
         ("Q11-Q15 use the exact locked refusal", all(
