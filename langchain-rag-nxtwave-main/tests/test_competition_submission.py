@@ -59,12 +59,18 @@ class CompetitionSubmissionTests(unittest.TestCase):
         )
         self.assertEqual(clean_answer_for_submission("Eligible employees • Hybrid WFH • Full Remote"), "Eligible employees Hybrid WFH Full Remote")
 
+        self.assertEqual(
+            clean_answer_for_submission("CTC Range: Rs. 16.0L to Rs. 26.0L. Bonus Target: 10% of CTC."),
+            "Rs. 16.0L to Rs. 26.0L. 10% of CTC.",
+        )
+        verbose = " ".join("word%s" % index for index in range(100))
+        self.assertLessEqual(len(clean_answer_for_submission(verbose).split()), 80)
+
     def test_out_of_scope_ids_use_the_locked_refusal(self):
         self.assertEqual(OUT_OF_SCOPE_IDS, {"Q11", "Q12", "Q13", "Q14", "Q15"})
         self.assertEqual(
             REFUSAL_ANSWER,
-            "I'm sorry, I can only answer questions related to Zyro Dynamics HR policies. "
-            "This question is outside the scope of the available HR policy documentation.",
+            "I can only answer HR-related questions from Zyro Dynamics policy documents.",
         )
         self.assertEqual(clean_answer_for_submission(REFUSAL_ANSWER), REFUSAL_ANSWER)
 

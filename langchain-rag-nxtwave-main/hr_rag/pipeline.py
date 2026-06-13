@@ -207,6 +207,32 @@ LEGAL_ADVICE_PATTERNS = [
 
 REFUSAL_TEXT = "I can only answer HR-related questions from Zyro Dynamics policy documents."
 
+ANSWER_PROMPT_TEMPLATE = """You are an HR policy assistant for Zyro Dynamics.
+Answer the employee question using ONLY the retrieved policy excerpts below.
+
+STRICT OUTPUT RULES - violations will cause scoring failures:
+1. Write in plain prose sentences ONLY. No bullet points, no numbered lists,
+   no dashes as list markers.
+2. NO markdown formatting: no **bold**, no *italic*, no ## headings, no > quotes.
+3. NO structured labels like "Salary Credit Date:", "Bonus Target:", "Scope:",
+   "Definition:", "Required document:", "Submission deadline:", etc.
+4. Maximum 3 sentences. Absolute hard limit: 80 words total. Count your words.
+   If your answer exceeds 80 words, you MUST shorten it before outputting.
+5. Use exact numbers, percentages, dates, and policy-specific terms verbatim
+   from the excerpts - do not paraphrase them.
+6. Do NOT start with "Based on...", "According to...", "Here is...",
+   "The following...", or any filler opening.
+7. Do NOT add a closing sentence about "this policy applies to all employees"
+   or similar generic filler.
+8. Start your answer directly with the relevant policy information.
+
+Policy Excerpts:
+{context}
+
+Employee Question: {question}
+
+Answer (plain prose, max 80 words, no formatting):"""
+
 POLICY_SOURCE_ROUTES = [
     (("work from home", "wfh", "hybrid", "full remote", "ad-hoc wfh", "emergency wfh"), "03_Work_From_Home_Policy.pdf"),
     (("earned leave", "sick leave", "maternity leave", "paternity leave", "leave"), "02_Leave_Policy.pdf"),
@@ -733,56 +759,10 @@ class HRRagPipeline:
         context: str,
         chat_history: Sequence[Tuple[str, str]],
     ) -> str:
-        history_text = "\n".join(
-            "Employee: %s\nAssistant: %s" % (human, assistant)
-            for human, assistant in list(chat_history)[-4:]
-        )
-        style_instruction = answer_style_instruction(question)
-        prompt = ChatPromptTemplate.from_messages(
-            [
-                (
-                    "system",
-                    (
-                        "You are an HR policy assistant for Zyro Dynamics. Answer only from the retrieved "
-                        "policy excerpts supplied in the user message.\n"
-                        "Rules:\n"
-                        "- Copy key policy phrases, numbers, dates, percentages, amounts, and named terms "
-                        "verbatim from the excerpts. Do not paraphrase them.\n"
-                        "- Answer every part of the question, but include no unasked background or general HR knowledge.\n"
-                        "- Use two to three concise sentences where possible. Do not pad a complete short answer. "
-                        "Use a numbered list when the question requests a complete timeline or process.\n"
-                        "- If a question asks about a policy limit or carry-forward rule, include the directly stated "
-                        "consequence of exceeding that limit when it appears in the excerpts.\n"
-                        "- Follow the answer style instruction exactly.\n"
-                        "- The challenge corpus uses Acrux Dynamics and Zyro Dynamics interchangeably. Treat "
-                        "those two names as the same company only for answers grounded in this context.\n"
-                        "- Company-wide policy facts such as salary bands, grade ranges, and benefit tables are "
-                        "allowed. Do not reveal or infer any specific employee's private compensation or records.\n"
-                        "- Return only the final answer in plain text. Do not use markdown, label prefixes, citations, "
-                        "source lines, chunk IDs, reasoning, relevance ranks, or repeated facts.\n"
-                        "- If the context does not contain the answer, return exactly: "
-                        "I could not find this information in the Zyro Dynamics HR policy documents."
-                    ),
-                ),
-                (
-                    "human",
-                    (
-                        "Conversation history:\n{history}\n\n"
-                        "Policy context:\n{context}\n\n"
-                        "Employee question: {question}\n\n"
-                        "Answer style instruction: {style_instruction}\n\n"
-                        "Answer:"
-                    ),
-                ),
-            ]
-        )
+        prompt = PromptTemplate.from_template(ANSWER_PROMPT_TEMPLATE)
 
         if create_stuff_documents_chain is not None:
-            document_prompt = PromptTemplate.from_template(
-                "Relevance rank: {retrieval_rank}\n"
-                "Citation: [{chunk_id} from {source_file}]\n"
-                "Policy text:\n{page_content}"
-            )
+            document_prompt = PromptTemplate.from_template("{page_content}")
             stuff_chain = create_stuff_documents_chain(
                 self.llm,
                 prompt,
@@ -791,19 +771,15 @@ class HRRagPipeline:
             return stuff_chain.invoke(
                 {
                     "context": docs,
-                    "history": history_text or "None",
                     "question": question,
-                    "style_instruction": style_instruction,
                 }
             )
 
         chain = prompt | self.llm | StrOutputParser()
         return chain.invoke(
             {
-                "history": history_text or "None",
                 "context": context,
                 "question": question,
-                "style_instruction": style_instruction,
             }
         )
 
@@ -1092,7 +1068,7 @@ def build_chat_model(provider: str = "auto", temperature: float = 0.0):
             model_kwargs={"top_p": float(os.getenv("GROQ_TOP_P", "1.0"))},
             timeout=float(os.getenv("GROQ_REQUEST_TIMEOUT", "90")),
             max_retries=int(os.getenv("GROQ_MAX_RETRIES", "0")),
-            max_tokens=int(os.getenv("GROQ_MAX_TOKENS", "180")),
+            max_tokens=int(os.getenv("GROQ_MAX_TOKENS", "150")),
         )
     if selected == "openai":
         from langchain_openai import ChatOpenAI

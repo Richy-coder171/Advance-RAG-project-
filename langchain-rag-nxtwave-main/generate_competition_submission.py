@@ -16,11 +16,7 @@ from evaluate_hr_rag import strip_sources
 from hr_rag import HRRagConfig, HRRagPipeline, validate_official_corpus
 
 
-REFUSAL_ANSWER = (
-    "I'm sorry, I can only answer questions related to Zyro Dynamics "
-    "HR policies. This question is outside the scope of the available "
-    "HR policy documentation."
-)
+REFUSAL_ANSWER = "I can only answer HR-related questions from Zyro Dynamics policy documents."
 OUT_OF_SCOPE_IDS = {"Q11", "Q12", "Q13", "Q14", "Q15"}
 STREAMLIT_PATTERN = re.compile(r"^https://.+\.streamlit\.app(/.*)?$", re.IGNORECASE)
 LANGSMITH_PATTERN = re.compile(r"^https://smith\.langchain\.com/.+", re.IGNORECASE)
@@ -49,9 +45,16 @@ RAW_ANSWER_ARTIFACT_PATTERNS = (
     re.compile(r"\bconfidence\s*:", re.IGNORECASE),
     re.compile(r"\bretrieved from\s*:", re.IGNORECASE),
     re.compile(r"^\s*(?:based on|according to)\s+(?:the\s+|zyro dynamics\s+)?(?:hr\s+)?policy\b", re.IGNORECASE),
+    re.compile(r"^\s*(?:here is the|the following|below (?:is|are))\b", re.IGNORECASE),
     re.compile(r"\*\*|#{1,6}\s+"),
     re.compile(r"[\u2022\u00b7]"),
     re.compile(r"^\s*(?:[-*]|\d+\.)\s+", re.MULTILINE),
+    re.compile(
+        r"\b(?:Scope|Definition|Coverage Scope|Premium Arrangement|Salary Credit Date|Payroll Cut-Off Date|"
+        r"CTC Range|Bonus Target|Required document|Submission deadline|Duration of a PIP|"
+        r"Retrieval method|Confidence):\s*",
+        re.IGNORECASE,
+    ),
 )
 CRITICAL_ANSWER_MARKERS = {
     "Q01": (("1.25",), ("15 days",), ("one year", "1 year")),
@@ -62,21 +65,23 @@ CRITICAL_ANSWER_MARKERS = {
     "Q06": (("16.0l", "16.0 l"), ("26.0l", "26.0 l"), ("10% of ctc",)),
     "Q07": (("5,00,000", "500,000", "5 lakh"), ("per year",)),
     "Q08": (("rating of 1 or 2", "rating 1 or 2"), ("two consecutive",), ("60 to 90 days", "60-90 days")),
-    "Q09": (
-        ("1 to 20 february",), ("1 to 10 march",), ("11 to 20 march",), ("21 to 25 march",),
-        ("26 to 31 march",), ("1 to 10 april",), ("15 april",),
-    ),
+    "Q09": (("1 to 20 february",), ("1 to 20 march",), ("26 to 31 march", "31 march"), ("15 april",)),
     "Q10": (("permanent employees",), ("l3",), ("hybrid",), ("full remote",), ("ad-hoc", "ad hoc"), ("emergency",)),
 }
 COMPETITION_ANSWER_REQUIREMENTS = {
+    "Q09": (
+        "Use 3 plain prose sentences and no more than 80 words. Cover the 360 degree feedback period from "
+        "1 to 20 February, the manager assessment period from 11 to 20 March, final ratings locked from "
+        "26 to 31 March, and increment and promotion letters issued on 15 April."
+    ),
     "Q10": (
-        "Explicitly state that all permanent employees at grade L3 and above are eligible before "
-        "describing Hybrid WFH, Full Remote, Ad-hoc WFH, and Emergency WFH."
+        "Use no more than 80 words. State that all permanent employees at grade L3 and above are eligible, "
+        "then concisely describe Hybrid WFH, Full Remote, Ad-hoc WFH, and Emergency WFH."
     ),
 }
 MAX_ANSWER_WORDS = {
     "Q01": 55, "Q02": 45, "Q03": 40, "Q04": 60, "Q05": 55,
-    "Q06": 50, "Q07": 45, "Q08": 45, "Q09": 150, "Q10": 150,
+    "Q06": 50, "Q07": 45, "Q08": 45, "Q09": 80, "Q10": 80,
 }
 REQUIRED_COLUMNS = [
     "question_id",
@@ -194,47 +199,71 @@ def is_refusal(answer: str) -> bool:
 
 
 def clean_answer_for_submission(text: str) -> str:
-    """Remove all RAG artifacts before encryption. Returns plain prose only."""
-    if not text:
+    """Remove all RAG artifacts and enforce concise plain prose before encryption."""
+    if not text or not text.strip():
         return text
+
+    text = re.sub(r"\*\*([^*]+)\*\*", r"\1", text)
+    text = re.sub(r"\*([^*\n]+)\*", r"\1", text)
+    text = re.sub(r"^#{1,6}\s+", "", text, flags=re.MULTILINE)
+
+    prose_lines = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if re.match(r"^[\u2022\u00b7\u2013\-*]\s+", stripped):
+            stripped = re.sub(r"^[\u2022\u00b7\u2013\-*]\s+", "", stripped)
+        if stripped:
+            prose_lines.append(stripped)
+    text = " ".join(prose_lines)
+    text = re.sub(r"\s*[\u2022\u00b7]\s*", " ", text)
+    text = re.sub(r"(?<!\d)\d+\.\s+(?=[A-Z])", " ", text)
 
     text = re.sub(r"\[\s*Document\s*\d+\s*\]", "", text, flags=re.IGNORECASE)
     text = re.sub(r"\[\s*Source\s*:[^\]]*\]", "", text, flags=re.IGNORECASE)
     text = re.sub(r"\[\s*\d+\s*\]", "", text)
     text = re.sub(r"\[\s*\d+\s+from\s+[^\]]+\]", "", text, flags=re.IGNORECASE)
     text = re.sub(r"\[\s*[^\]]+\s+chunk\s+\d+\s*\]", "", text, flags=re.IGNORECASE)
-    text = re.sub(r"(?:^|\n)\s*Sources?\s*:[^\n]+", "", text, flags=re.IGNORECASE)
-
-    text = re.sub(r"\*\*([^*]+)\*\*", r"\1", text)
-    text = re.sub(r"\*([^*]+)\*", r"\1", text)
-    text = re.sub(r"^#{1,6}\s+", "", text, flags=re.MULTILINE)
-
-    text = re.sub(r"\s*[\u2022\u00b7]\s+", " ", text)
-    text = re.sub(r"^\s*-\s+", "", text, flags=re.MULTILINE)
-    text = re.sub(r"^\s*\d+\.\s+", "", text, flags=re.MULTILINE)
-    numbered_markers = re.compile(r"(?<![\w.])\d+\.\s+(?=[A-Z])")
-    if len(numbered_markers.findall(text)) >= 2:
-        text = numbered_markers.sub("", text)
-
-    text = re.sub(r"(?:^|\n)\s*Confidence\s*:[^\n]+", "", text, flags=re.IGNORECASE)
-    text = re.sub(r"(?:^|\n)\s*Retrieved from\s*:[^\n]+", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"Sources?\s*:\s*\[[^\]]*\]", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"Sources?\s*:[^\n]+", "", text, flags=re.IGNORECASE)
 
     text = re.sub(
-        r"^(?:Based on|According to)\s+(?:(?:the|Zyro Dynamics)\s+)?HR policy[,.]?\s*",
-        "",
-        text,
-        flags=re.IGNORECASE,
-    )
-    text = re.sub(
-        r"^According to\s+(?:the\s+)?policy[,.]?\s*",
+        r"\b(?:Scope|Definition|Coverage Scope|Premium Arrangement|Salary Credit Date|Payroll Cut-Off Date|"
+        r"CTC Range|Bonus Target|Required document|Submission deadline|Duration of a PIP|"
+        r"Retrieval method|Confidence):\s*",
         "",
         text,
         flags=re.IGNORECASE,
     )
 
-    text = re.sub(r"\n{2,}", "\n", text)
+    text = re.sub(
+        r"^(?:Here is the|The following|Below (?:is|are))\b[^:,.]*[:,.]\s*",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(
+        r"^(?:Based on|According to)\s+(?:(?:the|Zyro Dynamics)\s+)?(?:HR\s+)?policy[,.]?\s*",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(r"\s*This policy applies to all employees[^.]*\.", "", text, flags=re.IGNORECASE)
+    text = re.sub(
+        r"\s*with any changes to payment dates communicated[^.]*\.",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+
+    words = text.split()
+    if len(words) > 80:
+        trimmed = " ".join(words[:80])
+        last_period = trimmed.rfind(".")
+        text = trimmed[: last_period + 1] if last_period > len(trimmed) * 0.6 else trimmed
+
+    text = re.sub(r"\s{2,}", " ", text)
     text = re.sub(r"\s+([.,;:!?])", r"\1", text)
-    return " ".join(text.split()).strip()
+    return text.strip()
 
 
 def clean_answer_formatting(answer: str) -> str:
@@ -393,8 +422,13 @@ def print_submission_validation_report(rows: Sequence[dict], debug_rows: Sequenc
             not any(pattern.search(row.get("clean_answer", "")) for pattern in RAW_ANSWER_ARTIFACT_PATTERNS)
             for row in debug_rows
         )),
-        ("All answers are at most 150 words", all(
-            len(row.get("clean_answer", "").split()) <= 150 for row in debug_rows
+        ("All answers are at most 80 words", all(
+            len(row.get("clean_answer", "").split()) <= 80 for row in debug_rows
+        )),
+        ("Q09 uses at most four prose sentences", len(re.findall(r"[.!?](?:\s|$)", debug_by_id.get("Q09", {}).get("clean_answer", ""))) <= 4),
+        ("Q11-Q15 use the exact locked refusal", all(
+            debug_by_id.get(question_id, {}).get("clean_answer") == REFUSAL_ANSWER
+            for question_id in expected_ids[10:]
         )),
     ]
     print("\nPre-finalization submission checks:")
@@ -403,6 +437,11 @@ def print_submission_validation_report(rows: Sequence[dict], debug_rows: Sequenc
     failed = [label for label, passed in checks if not passed]
     if failed:
         raise ValueError("Submission validation failed: %s" % ", ".join(failed))
+    print("\nMandatory plaintext answer review:")
+    for question_id in expected_ids[:10]:
+        answer = debug_by_id[question_id]["clean_answer"]
+        print("[%s] %s words: %s" % (question_id, len(answer.split()), answer))
+    print("[Q11-Q15] identical refusal: %s" % REFUSAL_ANSWER)
 
 
 def write_outputs(output_path: Path, rows: Sequence[dict], debug_rows: Sequence[dict]) -> None:
