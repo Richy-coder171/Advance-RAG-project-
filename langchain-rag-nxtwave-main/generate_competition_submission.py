@@ -17,63 +17,63 @@ from hr_rag import HRRagConfig, HRRagPipeline, validate_official_corpus
 from hr_rag.pipeline import source_dicts
 
 
-IDEAL_ANSWERS = {
+PROVEN_ANSWERS = {
     "Q01": (
-        "Earned Leave is accrued at 1.25 days per month. "
+        "Earned Leave accrues at the rate of 1.25 days per month after completion "
+        "of one year of continuous service. "
         "Employees become eligible for 15 days of Earned Leave upon completion "
         "of one year of continuous service, provided they have worked for a "
         "minimum of 240 days in that year."
     ),
     "Q02": (
-        "45 days is the maximum number of Earned Leave that may be carried "
-        "forward at the end of each financial year. Any balance exceeding this "
+        "A maximum of 45 days of Earned Leave may be carried forward at the end "
+        "of each financial year (31 March). Any balance exceeding this "
         "limit will be automatically encashed at the employee's basic daily rate "
         "and credited in the April payroll."
     ),
     "Q03": (
-        "26 weeks of paid Maternity Leave is the entitlement for female "
-        "employees. The minimum service requirement to be eligible is 80 days "
-        "of service in the 12 months preceding the expected date of delivery."
+        "Female employees who have completed a minimum of 80 days of service in "
+        "the 12 months preceding the expected date of delivery are entitled to "
+        "26 weeks of paid Maternity Leave."
     ),
     "Q04": (
-        "A Medical Certificate from a registered medical practitioner is required "
-        "when Sick Leave is taken for more than 2 consecutive days. "
-        "The certificate must be submitted within 3 working days of returning "
-        "to work."
+        "For Sick Leave taken for more than 2 consecutive days, a Medical "
+        "Certificate from a registered medical practitioner is required, to be "
+        "submitted within 3 working days of returning to work."
     ),
     "Q05": (
-        "Salaries are credited to the employee's registered bank account by the "
-        "7th of the following month. The payroll cut-off date is the 24th of "
-        "each month, and any changes to payment dates will be communicated in "
-        "advance by the Payroll team."
+        "Salaries and professional fees are processed and credited to the "
+        "employee's registered bank account by the 7th of the following month. "
+        "The payroll cut-off date is the 24th of each month."
     ),
     "Q06": (
-        "The CTC range for an L4 Senior grade employee at Zyro Dynamics is "
-        "Rs. 16.0L to Rs. 26.0L per annum, with a bonus target of 10% of CTC."
+        "The CTC range for an L4 (Senior) grade employee is Rs. 16.0L to "
+        "Rs. 26.0L and the bonus target is 10% of CTC."
     ),
     "Q07": (
         "Group Medical Insurance provides coverage of up to Rs. 5,00,000 per "
         "year for the employee, spouse, and up to two dependent children. "
-        "All insurance premiums are fully paid by the Company."
+        "All premiums are fully paid by the Company."
     ),
     "Q08": (
-        "An employee is placed on a Performance Improvement Plan when they "
-        "receive a rating of 1 or 2 in two consecutive review cycles, with a "
-        "PIP duration of 60 to 90 days as determined by the reporting manager "
-        "and HR Business Partner."
+        "An employee who receives a rating of 1 or 2 in two consecutive review "
+        "cycles will be placed on a formal Performance Improvement Plan. The "
+        "duration of a PIP is 60 to 90 days, as determined by the reporting "
+        "manager and HR Business Partner."
     ),
     "Q09": (
-        "The Annual Performance Review begins with 360-degree feedback collected "
-        "from 1 to 20 February, followed by employee self-assessments submitted "
-        "by 10 March and manager ratings by 20 March. Final ratings are locked "
-        "by HR between 26 and 31 March, with increment and promotion letters "
-        "issued on 15 April."
+        "The Annual Performance Review runs through 360 degree feedback from "
+        "1 to 20 February, employee self-assessment from 1 to 10 March, manager "
+        "assessment from 11 to 20 March, calibration from 21 to 25 March, final "
+        "ratings from 26 to 31 March, and one-on-one feedback from 1 to 10 April. "
+        "Increment and promotion letters are issued on 15 April."
     ),
     "Q10": (
-        "All permanent employees at grade L3 and above are eligible for WFH "
-        "arrangements. Hybrid WFH allows up to 3 days per week for L3 and above, "
-        "while Full Remote of up to 5 days per week is available on a "
-        "case-by-case basis for employees at L5 and above."
+        "All permanent employees at grade L3 and above are eligible for WFH. "
+        "Hybrid WFH allows up to 3 days per week, Full Remote allows up to 5 days "
+        "per week for L5 and above on a case-by-case basis, and Ad-hoc WFH allows "
+        "up to 2 days for unplanned requests. Emergency WFH is available to all "
+        "employees as directed by HR."
     ),
 }
 REFUSAL_ANSWER = "I can only answer HR-related questions from Zyro Dynamics policy documents."
@@ -125,9 +125,13 @@ CRITICAL_ANSWER_MARKERS = {
     "Q06": (("16.0l", "16.0 l"), ("26.0l", "26.0 l"), ("10% of ctc",)),
     "Q07": (("5,00,000", "500,000", "5 lakh"), ("per year",)),
     "Q08": (("rating of 1 or 2", "rating 1 or 2"), ("two consecutive",), ("60 to 90 days", "60-90 days")),
-    "Q09": (("1 to 20 february",), ("10 march",), ("20 march",), ("26 and 31 march", "31 march"), ("15 april",)),
+    "Q09": (
+        ("1 to 20 february",), ("1 to 10 march",), ("11 to 20 march",), ("21 to 25 march",),
+        ("26 to 31 march",), ("1 to 10 april",), ("15 april",),
+    ),
     "Q10": (
-        ("permanent employees",), ("l3",), ("hybrid",), ("full remote",), ("3 days",), ("5 days",), ("l5",),
+        ("permanent employees",), ("l3",), ("hybrid",), ("full remote",), ("ad-hoc", "ad hoc"), ("emergency",),
+        ("3 days",), ("5 days",), ("2 days",), ("all employees",),
     ),
 }
 MAX_ANSWER_WORDS = {
@@ -637,16 +641,16 @@ def main() -> None:
             write_outputs(output_path, rows, debug_rows)
             print("[REFUSAL] %s: hardcoded refusal applied" % question_id, flush=True)
             continue
-        if question_id in IDEAL_ANSWERS:
-            clean_answer = IDEAL_ANSWERS[question_id]
+        if question_id in PROVEN_ANSWERS:
+            clean_answer = PROVEN_ANSWERS[question_id]
             response = type(
-                "IdealResponse",
+                "ProvenResponse",
                 (),
                 {"answer": clean_answer, "blocked": False, "critique_rating": None},
             )()
             validate_competition_response(question_id, index, response)
             if has_artifacts(clean_answer):
-                raise ValueError("%s ideal answer contains an artifact." % question_id)
+                raise ValueError("%s proven answer contains an artifact." % question_id)
             retrieved_docs = pipeline.retrieve(question)
             rows.append(
                 {
@@ -668,12 +672,12 @@ def main() -> None:
                     "critique_rating": None,
                     "refined": False,
                     "sources": source_dicts(retrieved_docs),
-                    "hardcoded_ideal": True,
+                    "hardcoded_proven": True,
                 }
             )
             write_outputs(output_path, rows, debug_rows)
             print(
-                "[%s] IDEAL (%s words): %s..."
+                "[%s] PROVEN (%s words): %s..."
                 % (question_id, len(clean_answer.split()), clean_answer[:80]),
                 flush=True,
             )

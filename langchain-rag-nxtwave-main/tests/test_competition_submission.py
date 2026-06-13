@@ -3,7 +3,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from generate_competition_submission import (
-    IDEAL_ANSWERS,
+    PROVEN_ANSWERS,
     OUT_OF_SCOPE_IDS,
     REFUSAL_ANSWER,
     clean_answer_for_submission,
@@ -76,9 +76,9 @@ class CompetitionSubmissionTests(unittest.TestCase):
         )
         self.assertEqual(clean_answer_for_submission(REFUSAL_ANSWER), REFUSAL_ANSWER)
 
-    def test_ideal_answers_are_complete_and_artifact_free(self):
-        self.assertEqual(set(IDEAL_ANSWERS), {"Q%02d" % index for index in range(1, 11)})
-        for question_id, answer in IDEAL_ANSWERS.items():
+    def test_proven_answers_are_complete_and_artifact_free(self):
+        self.assertEqual(set(PROVEN_ANSWERS), {"Q%02d" % index for index in range(1, 11)})
+        for question_id, answer in PROVEN_ANSWERS.items():
             self.assertFalse(has_artifacts(answer), question_id)
             self.assertLessEqual(len(answer.split()), 80, question_id)
 

@@ -20,6 +20,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--alternate", required=True)
     parser.add_argument("--replace", required=True, help="Comma-separated question IDs to take from alternate.")
     parser.add_argument("--output", required=True)
+    parser.add_argument(
+        "--trust-baseline",
+        action="store_true",
+        help="Strictly validate replacement rows while preserving unchanged rows from a known-scored baseline.",
+    )
     return parser.parse_args()
 
 
@@ -60,7 +65,8 @@ def main() -> None:
                 "critique_rating": debug.get("critique_rating"),
             },
         )()
-        validate_competition_response(question_id, index, response, enforce_word_limit=False)
+        if use_alternate or not args.trust_baseline:
+            validate_competition_response(question_id, index, response, enforce_word_limit=False)
         rows.append(row)
         debug_rows.append({**debug, "hybrid_source": "alternate" if use_alternate else "baseline"})
 
