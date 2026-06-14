@@ -3,12 +3,10 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from generate_competition_submission import (
-    PROVEN_ANSWERS,
     OUT_OF_SCOPE_IDS,
     REFUSAL_ANSWER,
     clean_answer_for_submission,
     extract_competition_questions,
-    has_artifacts,
     retry_wait_seconds,
     validate_competition_response,
     validate_links,
@@ -75,12 +73,6 @@ class CompetitionSubmissionTests(unittest.TestCase):
             "I can only answer HR-related questions from Zyro Dynamics policy documents.",
         )
         self.assertEqual(clean_answer_for_submission(REFUSAL_ANSWER), REFUSAL_ANSWER)
-
-    def test_proven_answers_are_complete_and_artifact_free(self):
-        self.assertEqual(set(PROVEN_ANSWERS), {"Q%02d" % index for index in range(1, 11)})
-        for question_id, answer in PROVEN_ANSWERS.items():
-            self.assertFalse(has_artifacts(answer), question_id)
-            self.assertLessEqual(len(answer.split()), 80, question_id)
 
     def test_critical_answer_validation_rejects_missing_facts_and_fallback(self):
         response = type("Response", (), {"answer": "", "blocked": False, "critique_rating": None})

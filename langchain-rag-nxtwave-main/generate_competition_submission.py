@@ -14,68 +14,6 @@ from cryptography.fernet import Fernet
 
 from evaluate_hr_rag import strip_sources
 from hr_rag import HRRagConfig, HRRagPipeline, validate_official_corpus
-from hr_rag.pipeline import source_dicts
-
-
-PROVEN_ANSWERS = {
-    "Q01": (
-        "Earned Leave accrues at the rate of 1.25 days per month after completion "
-        "of one year of continuous service. "
-        "Employees become eligible for 15 days of Earned Leave upon completion "
-        "of one year of continuous service, provided they have worked for a "
-        "minimum of 240 days in that year."
-    ),
-    "Q02": (
-        "A maximum of 45 days of Earned Leave may be carried forward at the end "
-        "of each financial year (31 March). Any balance exceeding this "
-        "limit will be automatically encashed at the employee's basic daily rate "
-        "and credited in the April payroll."
-    ),
-    "Q03": (
-        "Female employees who have completed a minimum of 80 days of service in "
-        "the 12 months preceding the expected date of delivery are entitled to "
-        "26 weeks of paid Maternity Leave."
-    ),
-    "Q04": (
-        "For Sick Leave taken for more than 2 consecutive days, a Medical "
-        "Certificate from a registered medical practitioner is required, to be "
-        "submitted within 3 working days of returning to work."
-    ),
-    "Q05": (
-        "Salaries and professional fees are processed and credited to the "
-        "employee's registered bank account by the 7th of the following month. "
-        "The payroll cut-off date is the 24th of each month."
-    ),
-    "Q06": (
-        "The CTC range for an L4 (Senior) grade employee is Rs. 16.0L to "
-        "Rs. 26.0L and the bonus target is 10% of CTC."
-    ),
-    "Q07": (
-        "Group Medical Insurance provides coverage of up to Rs. 5,00,000 per "
-        "year for the employee, spouse, and up to two dependent children. "
-        "All premiums are fully paid by the Company."
-    ),
-    "Q08": (
-        "An employee who receives a rating of 1 or 2 in two consecutive review "
-        "cycles will be placed on a formal Performance Improvement Plan. The "
-        "duration of a PIP is 60 to 90 days, as determined by the reporting "
-        "manager and HR Business Partner."
-    ),
-    "Q09": (
-        "The Annual Performance Review runs through 360 degree feedback from "
-        "1 to 20 February, employee self-assessment from 1 to 10 March, manager "
-        "assessment from 11 to 20 March, calibration from 21 to 25 March, final "
-        "ratings from 26 to 31 March, and one-on-one feedback from 1 to 10 April. "
-        "Increment and promotion letters are issued on 15 April."
-    ),
-    "Q10": (
-        "All permanent employees at grade L3 and above are eligible for WFH. "
-        "Hybrid WFH allows up to 3 days per week, Full Remote allows up to 5 days "
-        "per week for L5 and above on a case-by-case basis, and Ad-hoc WFH allows "
-        "up to 2 days for unplanned requests. Emergency WFH is available to all "
-        "employees as directed by HR."
-    ),
-}
 REFUSAL_ANSWER = "I can only answer HR-related questions from Zyro Dynamics policy documents."
 OUT_OF_SCOPE_IDS = {"Q11", "Q12", "Q13", "Q14", "Q15"}
 STREAMLIT_PATTERN = re.compile(r"^https://.+\.streamlit\.app(/.*)?$", re.IGNORECASE)
@@ -253,41 +191,20 @@ def is_refusal(answer: str) -> bool:
     return any(marker in normalized for marker in REFUSAL_MARKERS)
 
 
-def has_artifacts(text: str) -> bool:
-    """Return whether an answer contains formatting artifacts or excessive verbosity."""
-    patterns = (
-        r"\*\*",
-        r"^\s*[\u2022\u00b7\u2013-]\s",
-        r"^\s*\d+\.\s",
-        r"\b\w[\w\s]+:\s+",
-        r"^\s*Here is the",
-        r"^\s*The following",
-        r"\[Document",
-        r"\[Source:",
-    )
-    return len(text.split()) > 80 or any(re.search(pattern, text, re.IGNORECASE | re.MULTILINE) for pattern in patterns)
-
-
 def clean_answer_for_submission(text: str) -> str:
-    """Remove all RAG artifacts and enforce concise plain prose before encryption."""
-    if not text or not text.strip():
+    """Strip formatting artifacts without rewriting policy facts."""
+    if not text:
         return text
 
+    # Normalize common mojibake before stripping list markers.
+    text = text.replace("â€¢", "\u2022").replace("â€“", "\u2013").replace("â€”", "\u2014")
+
+    # Remove markdown while preserving the text inside it.
     text = re.sub(r"\*\*([^*]+)\*\*", r"\1", text)
     text = re.sub(r"\*([^*\n]+)\*", r"\1", text)
     text = re.sub(r"^#{1,6}\s+", "", text, flags=re.MULTILINE)
 
-    prose_lines = []
-    for line in text.splitlines():
-        stripped = line.strip()
-        if re.match(r"^[\u2022\u00b7\u2013\-*]\s+", stripped):
-            stripped = re.sub(r"^[\u2022\u00b7\u2013\-*]\s+", "", stripped)
-        if stripped:
-            prose_lines.append(stripped)
-    text = " ".join(prose_lines)
-    text = re.sub(r"\s*[\u2022\u00b7]\s*", " ", text)
-    text = re.sub(r"(?<!\d)\d+\.\s+(?=[A-Z])", " ", text)
-
+    # Remove UI citations and source blocks before flattening lines.
     text = re.sub(r"\[\s*Document\s*\d+\s*\]", "", text, flags=re.IGNORECASE)
     text = re.sub(r"\[\s*Source\s*:[^\]]*\]", "", text, flags=re.IGNORECASE)
     text = re.sub(r"\[\s*\d+\s*\]", "", text)
@@ -295,18 +212,30 @@ def clean_answer_for_submission(text: str) -> str:
     text = re.sub(r"\[\s*[^\]]+\s+chunk\s+\d+\s*\]", "", text, flags=re.IGNORECASE)
     text = re.sub(r"Sources?\s*:\s*\[[^\]]*\]", "", text, flags=re.IGNORECASE)
     text = re.sub(r"Sources?\s*:[^\n]+", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"Confidence\s*:[^\n]+", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"Retrieved from\s*:[^\n]+", "", text, flags=re.IGNORECASE)
 
+    # Flatten list lines into prose without deleting their factual content.
+    prose_lines = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        stripped = re.sub(r"^[\u2022\u00b7\u2013\u2014\-*]\s+", "", stripped)
+        stripped = re.sub(r"^\d+\.\s+(?=[A-Z])", "", stripped)
+        if stripped:
+            prose_lines.append(stripped)
+    text = " ".join(prose_lines)
+    text = re.sub(r"\s*[\u2022\u00b7\u2013\u2014]\s*", " ", text)
+    text = re.sub(r"(^|[.!?]\s+)\d+\.\s+(?=[A-Z])", r"\1", text)
+
+    # Strip label prefixes at sentence boundaries while preserving the sentence.
     text = re.sub(
-        r"\b(?:Scope|Definition|Coverage Scope|Premium Arrangement|Salary Credit Date|Payroll Cut-Off Date|"
-        r"CTC Range|Bonus Target|Required document|Submission deadline|Duration of a PIP|"
-        r"Retrieval method|Confidence):\s*",
-        "",
+        r"(^|[.!?]\s+)[A-Za-z0-9][A-Za-z0-9()/-]*(?:\s+[A-Za-z0-9][A-Za-z0-9()/-]*){0,4}:\s+(?=[A-Z])",
+        r"\1",
         text,
-        flags=re.IGNORECASE,
     )
 
     text = re.sub(
-        r"^(?:Here is the|The following|Below (?:is|are))\b[^:,.]*[:,.]\s*",
+        r"^(?:Here is (?:the|a)\s+[^:]+:\s*|The following[^:]+:\s*|Below (?:is|are)[^:]+:\s*)",
         "",
         text,
         flags=re.IGNORECASE,
@@ -318,6 +247,7 @@ def clean_answer_for_submission(text: str) -> str:
         flags=re.IGNORECASE,
     )
     text = re.sub(r"\s*This policy applies to all employees[^.]*\.", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\s*This applies to all L\d+[^.]*employees[^.]*\.", "", text, flags=re.IGNORECASE)
     text = re.sub(
         r"\s*with any changes to payment dates communicated[^.]*\.",
         "",
@@ -329,11 +259,14 @@ def clean_answer_for_submission(text: str) -> str:
     if len(words) > 80:
         trimmed = " ".join(words[:80])
         last_period = trimmed.rfind(".")
-        text = trimmed[: last_period + 1] if last_period > len(trimmed) * 0.6 else trimmed
+        text = trimmed[: last_period + 1] if last_period > len(trimmed) * 0.55 else trimmed.rstrip(",;") + "."
 
     text = re.sub(r"\s{2,}", " ", text)
     text = re.sub(r"\s+([.,;:!?])", r"\1", text)
-    return text.strip()
+    text = re.sub(r"\.{2,}", ".", text).strip()
+    if text and text[0].islower():
+        text = text[0].upper() + text[1:]
+    return text
 
 
 def clean_answer_formatting(answer: str) -> str:
@@ -640,47 +573,6 @@ def main() -> None:
             )
             write_outputs(output_path, rows, debug_rows)
             print("[REFUSAL] %s: hardcoded refusal applied" % question_id, flush=True)
-            continue
-        if question_id in PROVEN_ANSWERS:
-            clean_answer = PROVEN_ANSWERS[question_id]
-            response = type(
-                "ProvenResponse",
-                (),
-                {"answer": clean_answer, "blocked": False, "critique_rating": None},
-            )()
-            validate_competition_response(question_id, index, response)
-            if has_artifacts(clean_answer):
-                raise ValueError("%s proven answer contains an artifact." % question_id)
-            retrieved_docs = pipeline.retrieve(question)
-            rows.append(
-                {
-                    "question_id": question_id,
-                    "question_enc": fernet.encrypt(question.encode("utf-8")).decode("ascii"),
-                    "answer_enc": fernet.encrypt(clean_answer.encode("utf-8")).decode("ascii"),
-                    "streamlit_link": args.streamlit_link.strip(),
-                    "langsmith_link": args.langsmith_link.strip(),
-                }
-            )
-            debug_rows.append(
-                {
-                    "question_id": question_id,
-                    "question": question,
-                    "clean_answer": clean_answer,
-                    "answer_with_sources": clean_answer,
-                    "blocked": False,
-                    "confidence": 0.0,
-                    "critique_rating": None,
-                    "refined": False,
-                    "sources": source_dicts(retrieved_docs),
-                    "hardcoded_proven": True,
-                }
-            )
-            write_outputs(output_path, rows, debug_rows)
-            print(
-                "[%s] PROVEN (%s words): %s..."
-                % (question_id, len(clean_answer.split()), clean_answer[:80]),
-                flush=True,
-            )
             continue
         response = answer_with_retry(
             pipeline,

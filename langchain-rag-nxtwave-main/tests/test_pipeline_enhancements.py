@@ -59,9 +59,9 @@ class PipelineEnhancementTests(unittest.TestCase):
 
     def test_answer_style_instruction_and_source_stripping(self):
         self.assertIn("exact number", answer_style_instruction("How many sick leave days are available?"))
-        self.assertIn("numbered steps", answer_style_instruction("How to claim reimbursement?"))
+        self.assertIn("Do not use a numbered list", answer_style_instruction("How to claim reimbursement?"))
         self.assertIn("Yes or No", answer_style_instruction("Can I work from home?"))
-        self.assertIn("every stage", answer_style_instruction("What is the APR timeline?"))
+        self.assertIn("Do not use a numbered list", answer_style_instruction("What is the APR timeline?"))
         self.assertIn("every requested part", answer_style_instruction("What is required and by when?"))
         self.assertEqual(
             strip_sources("Employees get 10 days [12 from 02_Leave_Policy.pdf].\n\nSources: [12 from 02_Leave_Policy.pdf]"),

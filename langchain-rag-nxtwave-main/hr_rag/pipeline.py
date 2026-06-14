@@ -208,30 +208,28 @@ LEGAL_ADVICE_PATTERNS = [
 REFUSAL_TEXT = "I can only answer HR-related questions from Zyro Dynamics policy documents."
 
 ANSWER_PROMPT_TEMPLATE = """You are an HR policy assistant for Zyro Dynamics.
-Answer the employee question using ONLY the retrieved policy excerpts below.
+Answer ONLY using the retrieved policy excerpts below.
 
-STRICT OUTPUT RULES - violations will cause scoring failures:
-1. Write in plain prose sentences ONLY. No bullet points, no numbered lists,
-   no dashes as list markers.
-2. NO markdown formatting: no **bold**, no *italic*, no ## headings, no > quotes.
-3. NO structured labels like "Salary Credit Date:", "Bonus Target:", "Scope:",
-   "Definition:", "Required document:", "Submission deadline:", etc.
-4. Maximum 3 sentences. Absolute hard limit: 80 words total. Count your words.
-   If your answer exceeds 80 words, you MUST shorten it before outputting.
-5. Use exact numbers, percentages, dates, and policy-specific terms verbatim
-   from the excerpts - do not paraphrase them.
-6. Do NOT start with "Based on...", "According to...", "Here is...",
-   "The following...", or any filler opening.
-7. Do NOT add a closing sentence about "this policy applies to all employees"
-   or similar generic filler.
-8. Start your answer directly with the relevant policy information.
+HARD RULES - any violation causes scoring failure:
+1. Plain prose sentences ONLY. No bullets, dashes as list markers, or numbered lists.
+2. No markdown: no bold, italic, or headings.
+3. No label prefixes such as "Salary Credit Date:", "Scope:", "Definition:",
+   "CTC Range:", "Bonus Target:", "Required document:", "Submission deadline:",
+   "Coverage Scope:", "Premium Arrangement:", or "Duration of a PIP:".
+4. Maximum 3 sentences. Count your sentences. Stop at 3.
+5. Total word limit: 75 words. If you exceed 75 words, shorten immediately.
+6. Copy numbers, dates, percentages, and policy terms verbatim from excerpts.
+7. Do not open with "Here is", "The following", "Below are", or similar.
+8. Do not close with generic statements about the policy applying to all employees
+   or payment-date changes being communicated.
+9. Begin directly with the first relevant fact.
 
 Policy Excerpts:
 {context}
 
-Employee Question: {question}
+Question: {question}
 
-Answer (plain prose, max 80 words, no formatting):"""
+Answer (plain prose, max 3 sentences, max 75 words, zero formatting):"""
 
 POLICY_SOURCE_ROUTES = [
     (("work from home", "wfh", "hybrid", "full remote", "ad-hoc wfh", "emergency wfh"), "03_Work_From_Home_Policy.pdf"),
@@ -260,14 +258,14 @@ def answer_style_instruction(question: str) -> str:
     if ("work from home" in q or "wfh" in q) and ("type" in q or "arrangement" in q):
         return (
             "First state the general eligibility rule, including employment status and minimum grade. "
-            "Then name Hybrid WFH, Full Remote, Ad-hoc WFH, and Emergency WFH with each arrangement's "
-            "eligibility and maximum days per week. Use plain prose with no markdown." + completeness
+            "Then name Hybrid WFH, Full Remote, Ad-hoc WFH, and Emergency WFH. "
+            "Use no more than three plain prose sentences with no markdown or labels." + completeness
         )
 
     if re.search(r"\b(timeline|schedule|stages?|steps?|process|procedure)\b", q):
         return (
-            "Use numbered steps in chronological order. Include every stage, date, deadline, or owner "
-            "requested by the question. Use plain text only." + completeness
+            "Summarize the requested stages, dates, deadlines, or owners chronologically in no more "
+            "than three plain prose sentences. Do not use a numbered list." + completeness
         )
 
     if re.search(r"\b(how many|how much)\b", q) or re.search(r"\bdays?\b", q):
@@ -284,7 +282,8 @@ def answer_style_instruction(question: str) -> str:
 
     if re.search(r"\b(how to|process|procedure|apply|claim|request|submit|report|file)\b", q):
         return (
-            "Use numbered steps. Keep each step short and include only actions stated in the context." + completeness
+            "Describe the required actions chronologically in no more than three plain prose sentences. "
+            "Do not use a numbered list." + completeness
         )
 
     if re.search(r"\b(what is|what are|define|definition|meaning)\b", q):
@@ -1064,11 +1063,11 @@ def build_chat_model(provider: str = "auto", temperature: float = 0.0):
 
         return ChatGroq(
             model=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
-            temperature=temperature,
-            model_kwargs={"top_p": float(os.getenv("GROQ_TOP_P", "1.0"))},
+            temperature=0.0,
+            model_kwargs={"top_p": 1.0},
             timeout=float(os.getenv("GROQ_REQUEST_TIMEOUT", "90")),
             max_retries=int(os.getenv("GROQ_MAX_RETRIES", "0")),
-            max_tokens=int(os.getenv("GROQ_MAX_TOKENS", "150")),
+            max_tokens=150,
         )
     if selected == "openai":
         from langchain_openai import ChatOpenAI
