@@ -205,34 +205,31 @@ LEGAL_ADVICE_PATTERNS = [
     re.compile(r"\b(can|should)\s+i\s+(sue|file a lawsuit|take legal action)\b", re.I),
 ]
 
-REFUSAL_TEXT = "I can only answer HR-related questions from Zyro Dynamics policy documents."
+REFUSAL_TEXT = (
+    "I can only answer questions about Zyro Dynamics HR policies "
+    "from the provided documents."
+)
 
-ANSWER_PROMPT_TEMPLATE = """You are an HR policy assistant for Zyro Dynamics.
-Answer ONLY using the retrieved policy excerpts below.
+ANSWER_PROMPT_TEMPLATE = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            """You are an HR assistant for Zyro Dynamics (also referred to as Acrux Dynamics).
+Answer using ONLY the provided context.
 
-HARD RULES - any violation causes scoring failure:
-1. Plain prose sentences ONLY. No bullets, dashes as list markers, or numbered lists.
-2. No markdown: no bold, italic, or headings.
-3. No label prefixes such as "Salary Credit Date:", "Scope:", "Definition:",
-   "CTC Range:", "Bonus Target:", "Required document:", "Submission deadline:",
-   "Coverage Scope:", "Premium Arrangement:", or "Duration of a PIP:".
-4. Maximum 3 sentences. Count your sentences. Stop at 3.
-5. Total word limit: 75 words. If you exceed 75 words, shorten immediately.
-6. Copy numbers, dates, percentages, and policy terms verbatim from excerpts.
-7. Do not open with "Here is", "The following", "Below are", or similar.
-8. Do not close with generic statements about the policy applying to all employees
-   or payment-date changes being communicated.
-9. Begin directly with the first relevant fact.
-
-Question-specific completeness guidance:
-{answer_style}
-
-Policy Excerpts:
-{context}
-
-Question: {question}
-
-Answer (plain prose, max 3 sentences, max 75 words, zero formatting):"""
+CRITICAL RULES:
+- Extract exact numbers, days, months, percentages, and amounts from the context.
+- When asked about timelines, cite the EXACT duration and condition from policy.
+- Differentiate clearly between different leave types, insurance types, and policy sections.
+- If context mentions multiple similar items, answer ONLY about the specific one asked.
+- The context IS sufficient if it contains the policy rules that answer the question.
+- Cite the source policy name in your answer.
+- If the context lacks information, say: "I cannot answer this based on the available HR policy documents."
+- Be concise and accurate.""",
+        ),
+        ("human", "Context:\n{context}\n\nQuestion: {question}"),
+    ]
+)
 
 POLICY_SOURCE_ROUTES = [
     (("work from home", "wfh", "hybrid", "full remote", "ad-hoc wfh", "emergency wfh"), "03_Work_From_Home_Policy.pdf"),
@@ -307,10 +304,10 @@ class HRRagConfig:
     collection_name: str = "zyro_hr_policies"
     embedding_provider: str = "auto"
     llm_provider: str = "auto"
-    chunk_size: int = 900
-    chunk_overlap: int = 150
-    retrieval_k: int = 8
-    fetch_k: int = 60
+    chunk_size: int = 1000
+    chunk_overlap: int = 200
+    retrieval_k: int = 6
+    fetch_k: int = 48
     temperature: float = 0.0
     max_context_chars_per_chunk: int = 1800
     vector_weight: float = 0.65
@@ -761,11 +758,12 @@ class HRRagPipeline:
         context: str,
         chat_history: Sequence[Tuple[str, str]],
     ) -> str:
-        prompt = PromptTemplate.from_template(ANSWER_PROMPT_TEMPLATE)
-        answer_style = answer_style_instruction(question)
+        prompt = ANSWER_PROMPT_TEMPLATE
 
         if create_stuff_documents_chain is not None:
-            document_prompt = PromptTemplate.from_template("{page_content}")
+            document_prompt = PromptTemplate.from_template(
+                "Source policy: {source_file}\n{page_content}"
+            )
             stuff_chain = create_stuff_documents_chain(
                 self.llm,
                 prompt,
@@ -775,7 +773,6 @@ class HRRagPipeline:
                 {
                     "context": docs,
                     "question": question,
-                    "answer_style": answer_style,
                 }
             )
 
@@ -784,7 +781,6 @@ class HRRagPipeline:
             {
                 "context": context,
                 "question": question,
-                "answer_style": answer_style,
             }
         )
 
@@ -1068,12 +1064,12 @@ def build_chat_model(provider: str = "auto", temperature: float = 0.0):
         from langchain_groq import ChatGroq
 
         return ChatGroq(
-            model=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
-            temperature=0.0,
+            model=os.getenv("GROQ_MODEL", "openai/gpt-oss-120b"),
+            temperature=0.1,
             model_kwargs={"top_p": 1.0},
             timeout=float(os.getenv("GROQ_REQUEST_TIMEOUT", "90")),
             max_retries=int(os.getenv("GROQ_MAX_RETRIES", "0")),
-            max_tokens=150,
+            max_tokens=512,
         )
     if selected == "openai":
         from langchain_openai import ChatOpenAI

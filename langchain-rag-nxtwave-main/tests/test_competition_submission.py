@@ -72,49 +72,28 @@ class CompetitionSubmissionTests(unittest.TestCase):
         self.assertIn("12 months", response.answer)
         self.assertIn("Completeness correction", pipeline.questions[1])
 
-    def test_submission_cleaning_removes_artifacts_without_deleting_answer_text(self):
-        dirty = (
-            "According to the HR policy, **Employees receive 15 days.** [Document 1] [1]\n"
-            "1. Apply through the portal.\nSource: 02_Leave_Policy.pdf\n"
-            "Confidence: 0.82\nRetrieved from: leave chunks"
-        )
+    def test_submission_cleaning_removes_formatting_and_preserves_sources(self):
+        dirty = "**Employees receive 15 days.**\n1. Apply through the portal.\nSource: 02_Leave_Policy.pdf"
         self.assertEqual(
             clean_answer_for_submission(dirty),
-            "Employees receive 15 days. Apply through the portal.",
+            "Employees receive 15 days. Apply through the portal.\nSource: 02_Leave_Policy.pdf",
         )
-        timeline = "1. First stage: February 2. Second stage: March 3. Final stage: April"
         self.assertEqual(
-            clean_answer_for_submission(timeline),
-            "February. March. April",
+            clean_answer_for_submission("1. February\n2. March\n3. April"),
+            "February March April",
         )
-        self.assertEqual(clean_answer_for_submission("Eligible employees • Hybrid WFH • Full Remote"), "Eligible employees Hybrid WFH Full Remote")
-
         self.assertEqual(
             clean_answer_for_submission("CTC Range: Rs. 16.0L to Rs. 26.0L. Bonus Target: 10% of CTC."),
             "Rs. 16.0L to Rs. 26.0L. 10% of CTC.",
         )
-        self.assertEqual(
-            clean_answer_for_submission(
-                "1.25 days: Earned Leave accrues at this rate per month. "
-                "* 15 days: Employees become eligible after one year."
-            ),
-            "Earned Leave accrues at this rate per month. Employees become eligible after one year.",
-        )
-        self.assertEqual(
-            clean_answer_for_submission(
-                "Here is the APR timeline: 1. Feedback happens in February. "
-                "2. Ratings happen in March. 3. Letters issue in April."
-            ),
-            "Feedback happens in February. Ratings happen in March. Letters issue in April.",
-        )
         verbose = " ".join("word%s" % index for index in range(100))
-        self.assertLessEqual(len(clean_answer_for_submission(verbose).split()), 80)
+        self.assertEqual(clean_answer_for_submission(verbose), verbose)
 
     def test_out_of_scope_ids_use_the_locked_refusal(self):
         self.assertEqual(OUT_OF_SCOPE_IDS, {"Q11", "Q12", "Q13", "Q14", "Q15"})
         self.assertEqual(
             REFUSAL_ANSWER,
-            "I can only answer HR-related questions from Zyro Dynamics policy documents.",
+            "I can only answer questions about Zyro Dynamics HR policies from the provided documents.",
         )
         self.assertEqual(clean_answer_for_submission(REFUSAL_ANSWER), REFUSAL_ANSWER)
 
@@ -138,7 +117,8 @@ class CompetitionSubmissionTests(unittest.TestCase):
         validate_competition_response("Q06", 6, response)
 
         response.answer = "L4 Senior: Rs. 16.0L to Rs. 26.0L; bonus target: 10% of CTC. [Document 3]"
-        validate_competition_response("Q06", 6, response)
+        with self.assertRaises(ValueError):
+            validate_competition_response("Q06", 6, response)
 
         response.answer = "L4 Senior: Rs. 16.0L to Rs. 26.0L; bonus target: 10% of CTC. Chunk ID: 3"
         with self.assertRaises(ValueError):

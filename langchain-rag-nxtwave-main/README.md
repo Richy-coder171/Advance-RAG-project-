@@ -78,7 +78,7 @@ LANGCHAIN_TRACING_V2 = "true"
 LANGSMITH_TRACING = "true"
 LLM_PROVIDER = "groq"
 EMBEDDING_PROVIDER = "hash"
-GROQ_MODEL = "llama-3.3-70b-versatile"
+GROQ_MODEL = "openai/gpt-oss-120b"
 ```
 
 ## Generate A Kaggle Submission
@@ -93,10 +93,10 @@ python generate_competition_submission.py `
   --langsmith-link "https://smith.langchain.com/public/YOUR-TRACE/r" `
   --embedding-provider hash `
   --llm-provider groq `
-  --chunk-size 900 `
-  --chunk-overlap 150 `
-  --retrieval-k 8 `
-  --fetch-k 60 `
+  --chunk-size 1000 `
+  --chunk-overlap 200 `
+  --retrieval-k 6 `
+  --fetch-k 48 `
   --vector-weight 0.65 `
   --disable-self-critique `
   --rebuild
@@ -110,8 +110,10 @@ python generate_competition_submission.py `
   --langsmith-link "https://smith.langchain.com/public/YOUR-TRACE/r" `
   --embedding-provider huggingface `
   --llm-provider groq `
-  --retrieval-k 8 `
-  --fetch-k 60 `
+  --chunk-size 1000 `
+  --chunk-overlap 200 `
+  --retrieval-k 6 `
+  --fetch-k 48 `
   --rebuild
 ```
 

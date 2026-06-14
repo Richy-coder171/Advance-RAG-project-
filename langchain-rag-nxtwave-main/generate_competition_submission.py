@@ -14,7 +14,10 @@ from cryptography.fernet import Fernet
 
 from evaluate_hr_rag import strip_sources
 from hr_rag import HRRagConfig, HRRagPipeline, validate_official_corpus
-REFUSAL_ANSWER = "I can only answer HR-related questions from Zyro Dynamics policy documents."
+REFUSAL_ANSWER = (
+    "I can only answer questions about Zyro Dynamics HR policies "
+    "from the provided documents."
+)
 OUT_OF_SCOPE_IDS = {"Q11", "Q12", "Q13", "Q14", "Q15"}
 STREAMLIT_PATTERN = re.compile(r"^https://.+\.streamlit\.app(/.*)?$", re.IGNORECASE)
 LANGSMITH_PATTERN = re.compile(r"^https://smith\.langchain\.com/.+", re.IGNORECASE)
@@ -34,12 +37,9 @@ BROKEN_FALLBACK_MARKERS = (
 )
 RAW_ANSWER_ARTIFACT_PATTERNS = (
     re.compile(r"\[\s*document\s+\d+\s*\]", re.IGNORECASE),
-    re.compile(r"\[\s*source\s*:[^\]]*\]", re.IGNORECASE),
     re.compile(r"\[\s*\d+\s*\]"),
     re.compile(r"\bchunk\s*(?:id)?\s*[:#]?\s*\d+\b", re.IGNORECASE),
     re.compile(r"\brelevance rank\s*:", re.IGNORECASE),
-    re.compile(r"\bsource file\s*:", re.IGNORECASE),
-    re.compile(r"\bsources?\s*:", re.IGNORECASE),
     re.compile(r"\bconfidence\s*:", re.IGNORECASE),
     re.compile(r"\bretrieved from\s*:", re.IGNORECASE),
     re.compile(r"^\s*(?:based on|according to)\s+(?:the\s+|zyro dynamics\s+)?(?:hr\s+)?policy\b", re.IGNORECASE),
@@ -80,10 +80,6 @@ CRITICAL_ANSWER_MARKERS = {
         ("3 days",), ("5 days",), ("2 days",), ("all employees",),
     ),
 }
-MAX_ANSWER_WORDS = {
-    "Q01": 55, "Q02": 45, "Q03": 40, "Q04": 60, "Q05": 55,
-    "Q06": 50, "Q07": 45, "Q08": 45, "Q09": 80, "Q10": 80,
-}
 REQUIRED_COLUMNS = [
     "question_id",
     "question_enc",
@@ -107,10 +103,10 @@ def parse_args() -> argparse.Namespace:
         choices=["auto", "openai", "ollama", "huggingface", "hash"],
     )
     parser.add_argument("--llm-provider", default="auto", choices=["auto", "groq", "openai", "ollama", "extractive"])
-    parser.add_argument("--chunk-size", type=int, default=900)
-    parser.add_argument("--chunk-overlap", type=int, default=150)
-    parser.add_argument("--retrieval-k", type=int, default=8, help="Number of policy chunks supplied to the answer LLM.")
-    parser.add_argument("--fetch-k", type=int, default=60)
+    parser.add_argument("--chunk-size", type=int, default=1000)
+    parser.add_argument("--chunk-overlap", type=int, default=200)
+    parser.add_argument("--retrieval-k", type=int, default=6, help="Number of policy chunks supplied to the answer LLM.")
+    parser.add_argument("--fetch-k", type=int, default=48)
     parser.add_argument("--vector-weight", type=float, default=0.65)
     parser.add_argument("--keyword-weight", type=float, default=None, help="BM25 weight. Defaults to 1 - vector_weight.")
     parser.add_argument("--critique-threshold", type=float, default=0.55)
@@ -200,90 +196,44 @@ def is_refusal(answer: str) -> bool:
 
 
 def clean_answer_for_submission(text: str) -> str:
-    """Strip formatting artifacts without rewriting policy facts."""
     if not text:
         return text
 
-    # Normalize common mojibake before stripping list markers.
-    text = text.replace("â€¢", "\u2022").replace("â€“", "\u2013").replace("â€”", "\u2014")
-
-    # Remove markdown while preserving the text inside it.
+    # Strip markdown bold/italic only.
     text = re.sub(r"\*\*([^*]+)\*\*", r"\1", text)
     text = re.sub(r"\*([^*\n]+)\*", r"\1", text)
-    text = re.sub(r"^#{1,6}\s+", "", text, flags=re.MULTILINE)
 
-    # Remove UI citations and source blocks before flattening lines.
-    text = re.sub(r"\[\s*Document\s*\d+\s*\]", "", text, flags=re.IGNORECASE)
-    text = re.sub(r"\[\s*Source\s*:[^\]]*\]", "", text, flags=re.IGNORECASE)
-    text = re.sub(r"\[\s*\d+\s*\]", "", text)
-    text = re.sub(r"\[\s*\d+\s+from\s+[^\]]+\]", "", text, flags=re.IGNORECASE)
-    text = re.sub(r"\[\s*[^\]]+\s+chunk\s+\d+\s*\]", "", text, flags=re.IGNORECASE)
-    text = re.sub(r"Sources?\s*:\s*\[[^\]]*\]", "", text, flags=re.IGNORECASE)
-    text = re.sub(r"Sources?\s*:[^\n]+", "", text, flags=re.IGNORECASE)
-    text = re.sub(r"Confidence\s*:[^\n]+", "", text, flags=re.IGNORECASE)
-    text = re.sub(r"Retrieved from\s*:[^\n]+", "", text, flags=re.IGNORECASE)
+    # Strip bullet and numbered-list markers while retaining their content.
+    text = re.sub(r"(?:^|\n)\s*[\u2022\u00b7\u2013-]\s+", " ", text)
+    text = re.sub(r"(?:^|\n)\s*\d+\.\s+(?=[A-Z])", " ", text)
 
-    # Flatten list lines into prose without deleting their factual content.
-    prose_lines = []
-    for line in text.splitlines():
-        stripped = line.strip()
-        stripped = re.sub(r"^[\u2022\u00b7\u2013\u2014\-*]\s+", "", stripped)
-        stripped = re.sub(r"^\d+\.\s+(?=[A-Z])", "", stripped)
-        if stripped:
-            prose_lines.append(stripped)
-    text = " ".join(prose_lines)
-    text = re.sub(r"\s*[\u2022\u00b7\u2013\u2014]\s*", " ", text)
-    text = re.sub(r"(^|[.!?;]\s+)\s*[-*]\s+(?=[A-Z0-9])", r"\1", text)
-    text = re.sub(r"^(?:[1-9]|[1-9]\d)\.\s+(?=[A-Z])", "", text)
-    text = re.sub(r"\s+(?:[1-9]|[1-9]\d)\.\s+(?=[A-Z])", ". ", text)
+    # Strip heading markers.
+    text = re.sub(r"^\s*#{1,6}\s+", "", text, flags=re.MULTILINE)
 
-    # Strip only known formatting labels; broad label regexes can delete facts
-    # such as "Rs. 26.0L" when they appear before another label.
+    # Strip structured labels only, preserving source policy citations.
     text = re.sub(
-        r"\b(?:Salary Credit Date|Payroll Cut-Off Date|Scope|Definition|Coverage Scope|"
-        r"Premium Arrangement|CTC Range|Bonus Target|Required document|Submission deadline|"
-        r"Duration of a PIP|Timeline|Owner|Description|Stage|First stage|Second stage|Final stage|"
-        r"\d+(?:\.\d+)? days):\s*",
+        r"\b(?:Scope|Definition|Coverage Scope|Premium Arrangement|CTC Range|Bonus Target|"
+        r"Required document|Submission deadline|Duration of a PIP):\s+",
         "",
         text,
         flags=re.IGNORECASE,
     )
 
+    # Strip filler lead-ins.
     text = re.sub(
-        r"^(?:Here is (?:the|a)\s+[^:!?.]+[:!?.]\s*|The following[^:!?.]+[:!?.]\s*|"
-        r"Below (?:is|are)[^:!?.]+[:!?.]\s*)",
-        "",
-        text,
-        flags=re.IGNORECASE,
-    )
-    text = re.sub(r"^(?:[1-9]|[1-9]\d)\.\s+(?=[A-Z])", "", text)
-    text = re.sub(
-        r"^(?:Based on|According to)\s+(?:(?:the|Zyro Dynamics)\s+)?(?:HR\s+)?policy[,.]?\s*",
-        "",
-        text,
-        flags=re.IGNORECASE,
-    )
-    text = re.sub(r"\s*This policy applies to all employees[^.]*\.", "", text, flags=re.IGNORECASE)
-    text = re.sub(r"\s*This applies to all L\d+[^.]*employees[^.]*\.", "", text, flags=re.IGNORECASE)
-    text = re.sub(
-        r"\s*with any changes to payment dates communicated[^.]*\.",
+        r"^(?:Here is (?:the|a)\s+[^:]+:\s*|The following[^:]+:\s*)",
         "",
         text,
         flags=re.IGNORECASE,
     )
 
-    words = text.split()
-    if len(words) > 80:
-        trimmed = " ".join(words[:80])
-        last_period = trimmed.rfind(".")
-        text = trimmed[: last_period + 1] if last_period > len(trimmed) * 0.55 else trimmed.rstrip(",;") + "."
+    # Strip sub-bullet metadata.
+    text = re.sub(r"\s*-\s*(?:Timeline|Owner|Stage):\s*[^\n.]+", "", text)
 
+    # Normalize whitespace.
     text = re.sub(r"\s{2,}", " ", text)
-    text = re.sub(r"\s+([.,;:!?])", r"\1", text)
-    text = re.sub(r"\.{2,}", ".", text).strip()
-    if text and text[0].islower():
-        text = text[0].upper() + text[1:]
-    return text
+    text = re.sub(r"\s+([.,;])", r"\1", text)
+    return text.strip()
 
 
 def clean_answer_formatting(answer: str) -> str:
@@ -360,11 +310,6 @@ def validate_competition_response(question_id: str, index: int, response, enforc
         raise ValueError("%s used an extractive fallback." % question_id)
     if index <= 10 and any(marker in normalized for marker in BROKEN_FALLBACK_MARKERS):
         raise ValueError("%s contains broken or verbose fallback-style text." % question_id)
-    max_words = MAX_ANSWER_WORDS.get(question_id)
-    if enforce_word_limit and max_words and len(clean_answer.split()) > max_words:
-        raise ValueError("%s is too verbose for semantic-similarity scoring." % question_id)
-    if index <= 10 and len(re.findall(r"[.!?](?:\s|$)", clean_answer)) > 3:
-        raise ValueError("%s exceeds the three-sentence plain-prose limit." % question_id)
     for alternatives in CRITICAL_ANSWER_MARKERS.get(question_id, ()):
         if not any(marker in normalized or re.sub(r"\s+", "", marker) in compact for marker in alternatives):
             raise ValueError("%s is missing a required policy fact: %s" % (question_id, alternatives[0]))
@@ -460,14 +405,6 @@ def print_submission_validation_report(rows: Sequence[dict], debug_rows: Sequenc
             not any(pattern.search(row.get("clean_answer", "")) for pattern in RAW_ANSWER_ARTIFACT_PATTERNS)
             for row in debug_rows
         )),
-        ("All answers are at most 80 words", all(
-            len(row.get("clean_answer", "").split()) <= 80 for row in debug_rows
-        )),
-        ("Q01-Q10 use at most three prose sentences", all(
-            len(re.findall(r"[.!?](?:\s|$)", debug_by_id.get(question_id, {}).get("clean_answer", ""))) <= 3
-            for question_id in expected_ids[:10]
-        )),
-        ("Q09 uses at most four prose sentences", len(re.findall(r"[.!?](?:\s|$)", debug_by_id.get("Q09", {}).get("clean_answer", ""))) <= 4),
         ("Q11-Q15 use the exact locked refusal", all(
             debug_by_id.get(question_id, {}).get("clean_answer") == REFUSAL_ANSWER
             for question_id in expected_ids[10:]
