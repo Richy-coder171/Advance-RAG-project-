@@ -206,6 +206,10 @@ def clean_answer_for_submission(text: str) -> str:
     # Strip bullet and numbered-list markers while retaining their content.
     text = re.sub(r"(?:^|\n)\s*[\u2022\u00b7\u2013-]\s+", " ", text)
     text = re.sub(r"(?:^|\n)\s*\d+\.\s+(?=[A-Z])", " ", text)
+    # strip_sources() flattens newlines, so handle list markers after sentences too.
+    text = re.sub(r"(^|[.!?]\s+)\s*[\u2022\u00b7\u2013-]\s+", r"\1", text)
+    text = re.sub(r"(^|[.!?]\s+)\s*\d+\.\s+(?=[A-Z])", r"\1", text)
+    text = re.sub(r"\s+-\s+(?=[A-Z])", " ", text)
 
     # Strip heading markers.
     text = re.sub(r"^\s*#{1,6}\s+", "", text, flags=re.MULTILINE)
@@ -274,7 +278,8 @@ def answer_with_retry(
                     + "\n\nCompleteness correction: the prior answer omitted required policy facts. "
                     + "Include the exact retrieved policy wording that contains: "
                     + ", ".join(missing_facts)
-                    + ". Keep the answer in plain prose and answer only the original question."
+                    + ". Keep the answer concise enough to fit completely. Use plain prose, not a table "
+                    + "or list, and answer only the original question."
                 )
                 wait_seconds = 0.0
             else:

@@ -71,6 +71,7 @@ class CompetitionSubmissionTests(unittest.TestCase):
         )
         self.assertIn("12 months", response.answer)
         self.assertIn("Completeness correction", pipeline.questions[1])
+        self.assertIn("not a table or list", pipeline.questions[1])
 
     def test_submission_cleaning_removes_formatting_and_preserves_sources(self):
         dirty = "**Employees receive 15 days.**\n1. Apply through the portal.\nSource: 02_Leave_Policy.pdf"
@@ -81,6 +82,10 @@ class CompetitionSubmissionTests(unittest.TestCase):
         self.assertEqual(
             clean_answer_for_submission("1. February\n2. March\n3. April"),
             "February March April",
+        )
+        self.assertEqual(
+            clean_answer_for_submission("First fact. - Second fact."),
+            "First fact. Second fact.",
         )
         self.assertEqual(
             clean_answer_for_submission("CTC Range: Rs. 16.0L to Rs. 26.0L. Bonus Target: 10% of CTC."),
