@@ -6,6 +6,7 @@ from generate_competition_submission import (
     OUT_OF_SCOPE_IDS,
     REFUSAL_ANSWER,
     clean_answer_for_submission,
+    answer_with_retry,
     extract_competition_questions,
     retry_wait_seconds,
     validate_competition_response,
@@ -41,6 +42,35 @@ class CompetitionSubmissionTests(unittest.TestCase):
 
     def test_retry_wait_uses_groq_rate_limit_hint(self):
         self.assertAlmostEqual(retry_wait_seconds(Exception("Please try again in 2m47.5s."), 15, 1), 172.5)
+
+    def test_retry_adds_validator_feedback_for_missing_fact(self):
+        class Pipeline:
+            questions = []
+
+            def answer(self, question, force_refine=False):
+                self.questions.append(question)
+                answer = "26 weeks and 80 days."
+                if "12 months" in question:
+                    answer = "26 weeks and 80 days in the preceding 12 months."
+                return type("Response", (), {"answer": answer})()
+
+        pipeline = Pipeline()
+
+        def validator(response):
+            if "12 months" not in response.answer:
+                raise ValueError("Q03 is missing a required policy fact: 12 months")
+
+        response = answer_with_retry(
+            pipeline,
+            "Q03",
+            "What is the maternity leave eligibility?",
+            force_refine=False,
+            max_retries=2,
+            retry_delay=0,
+            validator=validator,
+        )
+        self.assertIn("12 months", response.answer)
+        self.assertIn("Completeness correction", pipeline.questions[1])
 
     def test_submission_cleaning_removes_artifacts_without_deleting_answer_text(self):
         dirty = (

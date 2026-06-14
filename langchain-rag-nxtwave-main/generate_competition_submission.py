@@ -301,9 +301,11 @@ def answer_with_retry(
     validator: Optional[Callable[[object], None]] = None,
 ):
     attempts = max(1, max_retries)
+    retry_question = question
+    missing_facts: List[str] = []
     for attempt in range(1, attempts + 1):
         try:
-            response = pipeline.answer(question, force_refine=force_refine)
+            response = pipeline.answer(retry_question, force_refine=force_refine)
             if validator is not None:
                 validator(response)
             return response
@@ -312,7 +314,21 @@ def answer_with_retry(
                 raise RuntimeError(
                     "%s failed after %s model attempts. No fallback answer was accepted." % (question_id, attempts)
                 ) from exc
-            wait_seconds = retry_wait_seconds(exc, retry_delay, attempt)
+            missing_fact_match = re.search(r"missing a required policy fact:\s*(.+)$", str(exc), re.IGNORECASE)
+            if missing_fact_match:
+                missing_fact = missing_fact_match.group(1).strip()
+                if missing_fact not in missing_facts:
+                    missing_facts.append(missing_fact)
+                retry_question = (
+                    question
+                    + "\n\nCompleteness correction: the prior answer omitted required policy facts. "
+                    + "Include the exact retrieved policy wording that contains: "
+                    + ", ".join(missing_facts)
+                    + ". Keep the answer in plain prose and answer only the original question."
+                )
+                wait_seconds = 0.0
+            else:
+                wait_seconds = retry_wait_seconds(exc, retry_delay, attempt)
             print(
                 "%s model attempt %s/%s failed (%s). Retrying in %.1f seconds."
                 % (question_id, attempt, attempts, type(exc).__name__, wait_seconds)
