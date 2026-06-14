@@ -55,13 +55,27 @@ class CompetitionSubmissionTests(unittest.TestCase):
         timeline = "1. First stage: February 2. Second stage: March 3. Final stage: April"
         self.assertEqual(
             clean_answer_for_submission(timeline),
-            "First stage: February Second stage: March Final stage: April",
+            "February. March. April",
         )
         self.assertEqual(clean_answer_for_submission("Eligible employees • Hybrid WFH • Full Remote"), "Eligible employees Hybrid WFH Full Remote")
 
         self.assertEqual(
             clean_answer_for_submission("CTC Range: Rs. 16.0L to Rs. 26.0L. Bonus Target: 10% of CTC."),
             "Rs. 16.0L to Rs. 26.0L. 10% of CTC.",
+        )
+        self.assertEqual(
+            clean_answer_for_submission(
+                "1.25 days: Earned Leave accrues at this rate per month. "
+                "* 15 days: Employees become eligible after one year."
+            ),
+            "Earned Leave accrues at this rate per month. Employees become eligible after one year.",
+        )
+        self.assertEqual(
+            clean_answer_for_submission(
+                "Here is the APR timeline: 1. Feedback happens in February. "
+                "2. Ratings happen in March. 3. Letters issue in April."
+            ),
+            "Feedback happens in February. Ratings happen in March. Letters issue in April.",
         )
         verbose = " ".join("word%s" % index for index in range(100))
         self.assertLessEqual(len(clean_answer_for_submission(verbose).split()), 80)

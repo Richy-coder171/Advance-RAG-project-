@@ -224,6 +224,9 @@ HARD RULES - any violation causes scoring failure:
    or payment-date changes being communicated.
 9. Begin directly with the first relevant fact.
 
+Question-specific completeness guidance:
+{answer_style}
+
 Policy Excerpts:
 {context}
 
@@ -759,6 +762,7 @@ class HRRagPipeline:
         chat_history: Sequence[Tuple[str, str]],
     ) -> str:
         prompt = PromptTemplate.from_template(ANSWER_PROMPT_TEMPLATE)
+        answer_style = answer_style_instruction(question)
 
         if create_stuff_documents_chain is not None:
             document_prompt = PromptTemplate.from_template("{page_content}")
@@ -771,6 +775,7 @@ class HRRagPipeline:
                 {
                     "context": docs,
                     "question": question,
+                    "answer_style": answer_style,
                 }
             )
 
@@ -779,6 +784,7 @@ class HRRagPipeline:
             {
                 "context": context,
                 "question": question,
+                "answer_style": answer_style,
             }
         )
 

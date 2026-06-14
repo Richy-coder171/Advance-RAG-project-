@@ -47,6 +47,14 @@ RAW_ANSWER_ARTIFACT_PATTERNS = (
     re.compile(r"\*\*|#{1,6}\s+"),
     re.compile(r"[\u2022\u00b7]"),
     re.compile(r"^\s*(?:[-*]|\d+\.)\s+", re.MULTILINE),
+    re.compile(r"(?:^|[.!?;]\s+)\s*(?:[-*]|\d+\.)\s+(?=[A-Z])"),
+    re.compile(
+        r"\b(?:Salary Credit Date|Payroll Cut-Off Date|Scope|Definition|Coverage Scope|"
+        r"Premium Arrangement|CTC Range|Bonus Target|Required document|Submission deadline|"
+        r"Duration of a PIP|Timeline|Owner|Description|Stage|First stage|Second stage|Final stage|"
+        r"\d+(?:\.\d+)? days):\s*",
+        re.IGNORECASE,
+    ),
     re.compile(
         r"\b(?:Scope|Definition|Coverage Scope|Premium Arrangement|Salary Credit Date|Payroll Cut-Off Date|"
         r"CTC Range|Bonus Target|Required document|Submission deadline|Duration of a PIP|"
@@ -225,21 +233,30 @@ def clean_answer_for_submission(text: str) -> str:
             prose_lines.append(stripped)
     text = " ".join(prose_lines)
     text = re.sub(r"\s*[\u2022\u00b7\u2013\u2014]\s*", " ", text)
-    text = re.sub(r"(^|[.!?]\s+)\d+\.\s+(?=[A-Z])", r"\1", text)
+    text = re.sub(r"(^|[.!?;]\s+)\s*[-*]\s+(?=[A-Z0-9])", r"\1", text)
+    text = re.sub(r"^(?:[1-9]|[1-9]\d)\.\s+(?=[A-Z])", "", text)
+    text = re.sub(r"\s+(?:[1-9]|[1-9]\d)\.\s+(?=[A-Z])", ". ", text)
 
-    # Strip label prefixes at sentence boundaries while preserving the sentence.
+    # Strip only known formatting labels; broad label regexes can delete facts
+    # such as "Rs. 26.0L" when they appear before another label.
     text = re.sub(
-        r"(^|[.!?]\s+)[A-Za-z0-9][A-Za-z0-9()/-]*(?:\s+[A-Za-z0-9][A-Za-z0-9()/-]*){0,4}:\s+(?=[A-Z])",
-        r"\1",
-        text,
-    )
-
-    text = re.sub(
-        r"^(?:Here is (?:the|a)\s+[^:]+:\s*|The following[^:]+:\s*|Below (?:is|are)[^:]+:\s*)",
+        r"\b(?:Salary Credit Date|Payroll Cut-Off Date|Scope|Definition|Coverage Scope|"
+        r"Premium Arrangement|CTC Range|Bonus Target|Required document|Submission deadline|"
+        r"Duration of a PIP|Timeline|Owner|Description|Stage|First stage|Second stage|Final stage|"
+        r"\d+(?:\.\d+)? days):\s*",
         "",
         text,
         flags=re.IGNORECASE,
     )
+
+    text = re.sub(
+        r"^(?:Here is (?:the|a)\s+[^:!?.]+[:!?.]\s*|The following[^:!?.]+[:!?.]\s*|"
+        r"Below (?:is|are)[^:!?.]+[:!?.]\s*)",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(r"^(?:[1-9]|[1-9]\d)\.\s+(?=[A-Z])", "", text)
     text = re.sub(
         r"^(?:Based on|According to)\s+(?:(?:the|Zyro Dynamics)\s+)?(?:HR\s+)?policy[,.]?\s*",
         "",
