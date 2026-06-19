@@ -16,10 +16,14 @@ from hr_rag.pipeline import (
     expand_with_adjacent_policy_chunks,
     infer_policy_source_hints,
     is_vague_query,
+    merge_semantic_units,
     needs_adjacent_context,
     normalize_company_aliases,
     remove_company_aliases,
+    rerank_fused_results,
     query_doc_overlap,
+    split_policy_documents,
+    split_semantic_units,
     trace_answer_inputs,
     trace_answer_output,
     trace_retrieval_output,
@@ -101,6 +105,54 @@ class PipelineEnhancementTests(unittest.TestCase):
             {"process.pdf"},
         )
         self.assertEqual([doc.metadata["chunk_id"] for doc, *_rest in expanded], [11, 10, 12])
+
+    def test_semantic_chunking_keeps_paragraph_units(self):
+        docs = [
+            Document(
+                page_content=(
+                    "SALARY BANDS BY GRADE\n\n"
+                    "The CTC range for an L4 (Senior) grade employee is Rs. 16.0L to Rs. 26.0L.\n\n"
+                    "BONUS TARGET\n\n"
+                    "The bonus target is 10% of CTC."
+                ),
+                metadata={"source_file": "comp.pdf"},
+            )
+        ]
+
+        units = split_semantic_units(docs[0].page_content)
+        merged = merge_semantic_units(units, chunk_size=90, chunk_overlap=20)
+        chunks = split_policy_documents(docs, chunk_size=90, chunk_overlap=20, strategy="semantic")
+
+        self.assertGreaterEqual(len(units), 3)
+        self.assertGreaterEqual(len(merged), 2)
+        self.assertGreaterEqual(len(chunks), 2)
+        self.assertEqual(chunks[0].metadata["chunking_strategy"], "semantic")
+        self.assertIn("SALARY BANDS BY GRADE", chunks[0].page_content)
+
+    def test_cross_encoder_reranking_can_promote_better_match(self):
+        docs = [
+            Document(page_content="Employees receive 15 days of Earned Leave.", metadata={"source_file": "leave.pdf", "chunk_id": 1}),
+            Document(page_content="Hybrid WFH is available to permanent employees at grade L3 and above.", metadata={"source_file": "wfh.pdf", "chunk_id": 2}),
+        ]
+
+        class FakeReranker:
+            def predict(self, pairs):
+                self.last_pairs = pairs
+                return [0.1, 0.9]
+
+        reranked = rerank_fused_results(
+            "Who is eligible for Hybrid WFH?",
+            [
+                (docs[0], 1.0, 0.75, ["bm25"]),
+                (docs[1], 0.95, 0.70, ["vector_mmr"]),
+            ],
+            FakeReranker(),
+            top_n=2,
+            weight=0.5,
+        )
+
+        self.assertEqual(reranked[0][0].metadata["chunk_id"], 2)
+        self.assertIn("cross_encoder", reranked[0][3])
 
     def test_policy_routing_excludes_unrelated_sources_when_enough_routed_chunks_exist(self):
         docs = [

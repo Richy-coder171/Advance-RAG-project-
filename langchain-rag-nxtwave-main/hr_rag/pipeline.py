@@ -972,7 +972,7 @@ def load_policy_documents(docs_path: str) -> List[Document]:
                 }
             )
             if clean_text(doc.page_content):
-            docs.append(doc)
+                docs.append(doc)
     return docs
 
 
