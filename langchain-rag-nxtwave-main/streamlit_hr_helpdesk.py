@@ -32,6 +32,8 @@ def load_streamlit_secrets() -> None:
     keys = [
         "GROQ_API_KEY",
         "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "GOOGLE_API_KEY",
         "LANGCHAIN_API_KEY",
         "LANGSMITH_API_KEY",
         "LANGCHAIN_PROJECT",
@@ -43,6 +45,9 @@ def load_streamlit_secrets() -> None:
         "GROQ_MODEL",
         "OPENAI_MODEL",
         "OPENAI_EMBEDDING_MODEL",
+        "ANTHROPIC_MODEL",
+        "GOOGLE_MODEL",
+        "RERANKER_MODEL",
     ]
     for key in keys:
         try:
@@ -86,6 +91,7 @@ def make_config():
         db_path=resolve_runtime_path(st.session_state.get("db_path", "chroma_zyro_official_store")),
         embedding_provider=st.session_state.get("embedding_provider", "auto"),
         llm_provider=st.session_state.get("llm_provider", "auto"),
+        chunking_strategy=st.session_state.get("chunking_strategy", "recursive"),
         chunk_size=int(st.session_state.get("chunk_size", 900)),
         chunk_overlap=int(st.session_state.get("chunk_overlap", 150)),
         retrieval_k=int(st.session_state.get("retrieval_k", 8)),
@@ -94,9 +100,12 @@ def make_config():
         keyword_weight=1.0 - float(st.session_state.get("vector_weight", 0.65)),
         min_confidence=float(st.session_state.get("min_confidence", 0.35)),
         max_chunks_per_source=int(st.session_state.get("max_chunks_per_source", 2)),
+        reranker_model="" if st.session_state.get("reranker_model", "off") == "off" else st.session_state.get("reranker_model", ""),
+        reranker_top_n=int(st.session_state.get("reranker_top_n", 12)),
         enable_hyde=bool(st.session_state.get("enable_hyde", True)),
         enable_self_critique=bool(st.session_state.get("enable_self_critique", True)),
         critique_confidence_threshold=float(st.session_state.get("critique_confidence_threshold", 0.55)),
+        use_few_shot_examples=bool(st.session_state.get("use_few_shot_examples", True)),
         append_source_block=bool(st.session_state.get("append_source_block", True)),
     )
 
@@ -121,13 +130,18 @@ with st.sidebar:
     )
     st.session_state.embedding_provider = st.selectbox(
         "Embeddings",
-        ["auto", "openai", "ollama", "hash"],
-        index=["auto", "openai", "ollama", "hash"].index(st.session_state.get("embedding_provider", "auto")),
+        ["auto", "openai", "huggingface", "ollama", "hash"],
+        index=["auto", "openai", "huggingface", "ollama", "hash"].index(st.session_state.get("embedding_provider", "auto")),
     )
     st.session_state.llm_provider = st.selectbox(
         "Answer model",
-        ["auto", "groq", "openai", "ollama", "extractive"],
-        index=["auto", "groq", "openai", "ollama", "extractive"].index(st.session_state.get("llm_provider", "auto")),
+        ["auto", "groq", "openai", "anthropic", "google", "ollama", "extractive"],
+        index=["auto", "groq", "openai", "anthropic", "google", "ollama", "extractive"].index(st.session_state.get("llm_provider", "auto")),
+    )
+    st.session_state.chunking_strategy = st.selectbox(
+        "Chunking strategy",
+        ["recursive", "semantic"],
+        index=["recursive", "semantic"].index(st.session_state.get("chunking_strategy", "recursive")),
     )
     st.session_state.chunk_size = st.slider("Chunk size", 400, 1800, int(st.session_state.get("chunk_size", 900)), 50)
     st.session_state.chunk_overlap = st.slider("Chunk overlap", 50, 400, int(st.session_state.get("chunk_overlap", 150)), 25)
@@ -142,11 +156,24 @@ with st.sidebar:
     st.session_state.max_chunks_per_source = st.slider(
         "Max chunks per source", 1, 5, int(st.session_state.get("max_chunks_per_source", 2)), 1
     )
+    st.session_state.reranker_model = st.selectbox(
+        "Cross-encoder reranker",
+        ["off", "cross-encoder/ms-marco-MiniLM-L-6-v2", "BAAI/bge-reranker-base"],
+        index=["off", "cross-encoder/ms-marco-MiniLM-L-6-v2", "BAAI/bge-reranker-base"].index(
+            st.session_state.get("reranker_model", "off")
+        ),
+    )
+    st.session_state.reranker_top_n = st.slider(
+        "Rerank top candidates", 0, 20, int(st.session_state.get("reranker_top_n", 12)), 1
+    )
     st.session_state.enable_hyde = st.toggle(
         "Conditional HyDE", value=bool(st.session_state.get("enable_hyde", True))
     )
     st.session_state.enable_self_critique = st.toggle(
         "Low-confidence refinement", value=bool(st.session_state.get("enable_self_critique", True))
+    )
+    st.session_state.use_few_shot_examples = st.toggle(
+        "Few-shot answer examples", value=bool(st.session_state.get("use_few_shot_examples", True))
     )
     st.session_state.critique_confidence_threshold = st.slider(
         "Refinement threshold",

@@ -24,7 +24,12 @@ def parse_args() -> argparse.Namespace:
         default="hash",
         choices=["auto", "openai", "ollama", "huggingface", "hash"],
     )
-    parser.add_argument("--llm-provider", default="extractive", choices=["auto", "groq", "openai", "ollama", "extractive"])
+    parser.add_argument(
+        "--llm-provider",
+        default="extractive",
+        choices=["auto", "groq", "openai", "anthropic", "google", "ollama", "extractive"],
+    )
+    parser.add_argument("--chunking-strategy", default="recursive", choices=["recursive", "semantic"])
     parser.add_argument("--chunk-size", type=int, default=900)
     parser.add_argument("--chunk-overlap", type=int, default=150)
     parser.add_argument("--retrieval-k", type=int, default=8)
@@ -33,11 +38,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--keyword-weight", type=float, default=None, help="BM25 weight. Defaults to 1 - vector_weight.")
     parser.add_argument("--min-confidence", type=float, default=0.35)
     parser.add_argument("--max-chunks-per-source", type=int, default=2)
+    parser.add_argument("--reranker-model", default="", help="Optional cross-encoder reranker model name.")
+    parser.add_argument("--reranker-top-n", type=int, default=0, help="Number of fused candidates to rerank; 0 disables reranking.")
     parser.add_argument("--critique-threshold", type=float, default=0.55)
     parser.add_argument("--disable-hyde", action="store_true")
     critique_group = parser.add_mutually_exclusive_group()
     critique_group.add_argument("--disable-self-critique", action="store_true")
     critique_group.add_argument("--force-self-critique", action="store_true")
+    parser.add_argument("--disable-few-shot", action="store_true")
     parser.add_argument("--no-source-block", action="store_true")
     parser.add_argument("--rebuild", action="store_true")
     return parser.parse_args()
@@ -350,6 +358,7 @@ def main() -> None:
         db_path=args.db_path,
         embedding_provider=args.embedding_provider,
         llm_provider=args.llm_provider,
+        chunking_strategy=args.chunking_strategy,
         chunk_size=args.chunk_size,
         chunk_overlap=args.chunk_overlap,
         retrieval_k=args.retrieval_k,
@@ -358,9 +367,12 @@ def main() -> None:
         keyword_weight=args.keyword_weight if args.keyword_weight is not None else 1.0 - args.vector_weight,
         min_confidence=args.min_confidence,
         max_chunks_per_source=args.max_chunks_per_source,
+        reranker_model=args.reranker_model,
+        reranker_top_n=args.reranker_top_n,
         enable_hyde=not args.disable_hyde,
         enable_self_critique=not args.disable_self_critique,
         critique_confidence_threshold=args.critique_threshold,
+        use_few_shot_examples=not args.disable_few_shot,
         append_source_block=not args.no_source_block,
     )
     pipeline = HRRagPipeline.from_config(config, rebuild=args.rebuild)

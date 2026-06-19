@@ -2,6 +2,8 @@ streamlit==1.57.0
 langchain
 langchain-classic
 langchain-groq
+langchain-anthropic
+langchain-google-genai
 langchain-openai
 langchain-ollama
 langchain-chroma

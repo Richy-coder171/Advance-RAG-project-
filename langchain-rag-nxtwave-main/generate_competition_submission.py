@@ -102,7 +102,12 @@ def parse_args() -> argparse.Namespace:
         default="auto",
         choices=["auto", "openai", "ollama", "huggingface", "hash"],
     )
-    parser.add_argument("--llm-provider", default="auto", choices=["auto", "groq", "openai", "ollama", "extractive"])
+    parser.add_argument(
+        "--llm-provider",
+        default="auto",
+        choices=["auto", "groq", "openai", "anthropic", "google", "ollama", "extractive"],
+    )
+    parser.add_argument("--chunking-strategy", type=str, default="recursive", choices=["recursive", "semantic"])
     parser.add_argument("--chunk-size", type=int, default=900)
     parser.add_argument("--chunk-overlap", type=int, default=150)
     parser.add_argument("--retrieval-k", type=int, default=8, help="Number of policy chunks supplied to the answer LLM.")
@@ -110,6 +115,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--vector-weight", type=float, default=0.65)
     parser.add_argument("--keyword-weight", type=float, default=None, help="BM25 weight. Defaults to 1 - vector_weight.")
     parser.add_argument("--max-chunks-per-source", type=int, default=2)
+    parser.add_argument("--reranker-model", default="", help="Optional cross-encoder reranker model name.")
+    parser.add_argument("--reranker-top-n", type=int, default=0, help="Number of fused candidates to rerank; 0 disables reranking.")
     parser.add_argument("--critique-threshold", type=float, default=0.55)
     parser.add_argument("--delay", type=float, default=5.0, help="Seconds between questions to reduce rate-limit risk.")
     parser.add_argument("--max-retries", type=int, default=4, help="Maximum model attempts per in-scope question.")
@@ -121,6 +128,7 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Force a second model review for every in-scope answer instead of reviewing only low-confidence answers.",
     )
+    parser.add_argument("--disable-few-shot", action="store_true")
     parser.add_argument("--resume", action="store_true", help="Resume from an interrupted partial output file.")
     parser.add_argument(
         "--seed-from",
@@ -480,6 +488,7 @@ def main() -> None:
         db_path=args.db_path,
         embedding_provider=args.embedding_provider,
         llm_provider=args.llm_provider,
+        chunking_strategy=args.chunking_strategy,
         chunk_size=args.chunk_size,
         chunk_overlap=args.chunk_overlap,
         retrieval_k=max(2, args.retrieval_k),
@@ -487,9 +496,12 @@ def main() -> None:
         vector_weight=args.vector_weight,
         keyword_weight=args.keyword_weight if args.keyword_weight is not None else 1.0 - args.vector_weight,
         max_chunks_per_source=args.max_chunks_per_source,
+        reranker_model=args.reranker_model,
+        reranker_top_n=args.reranker_top_n,
         enable_hyde=False,
         enable_self_critique=not args.disable_self_critique,
         critique_confidence_threshold=args.critique_threshold,
+        use_few_shot_examples=not args.disable_few_shot,
         append_source_block=True,
         allow_extractive_fallback=False,
     )

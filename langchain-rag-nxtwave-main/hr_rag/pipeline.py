@@ -210,26 +210,43 @@ REFUSAL_TEXT = (
     "from the provided documents."
 )
 
-ANSWER_PROMPT_TEMPLATE = ChatPromptTemplate.from_messages(
-    [
-        (
-            "system",
-            """You are an HR assistant for Zyro Dynamics (also referred to as Acrux Dynamics).
-Answer using ONLY the provided context.
+FEW_SHOT_ANSWER_EXAMPLES = """
+Examples of good answers:
 
-CRITICAL RULES:
-- Extract exact numbers, days, months, percentages, and amounts from the context.
-- When asked about timelines, cite the EXACT duration and condition from policy.
-- Differentiate clearly between different leave types, insurance types, and policy sections.
-- If context mentions multiple similar items, answer ONLY about the specific one asked.
-- The context IS sufficient if it contains the policy rules that answer the question.
-- Cite the source policy name in your answer.
-- If the context lacks information, say: "I cannot answer this based on the available HR policy documents."
-- Be concise and accurate.""",
-        ),
-        ("human", "Context:\n{context}\n\nQuestion: {question}"),
-    ]
-)
+Q: What is the CTC range and bonus target for an L4 employee?
+A: The CTC range for an L4 (Senior) grade employee is Rs. 16.0L to Rs. 26.0L and the bonus target is 10% of CTC.
+
+Q: What is the APR timeline?
+A: The APR timeline includes 360-degree feedback collected from peers and subordinates from 1 to 20 February, self-assessment from 1 to 10 March, manager assessment from 11 to 20 March, calibration from 21 to 25 March, and final ratings locked from 26 to 31 March. Increment and promotion letters are issued on 15 April.
+
+Q: What is the Earned Leave carry-forward rule?
+A: A maximum of 45 days of Earned Leave may be carried forward at the end of each financial year (31 March). Any balance exceeding this limit will be automatically encashed at the employee's basic daily rate and credited in the April payroll.
+""".strip()
+
+
+def build_answer_prompt(use_few_shot_examples: bool = True) -> ChatPromptTemplate:
+    examples_block = ("\n\n" + FEW_SHOT_ANSWER_EXAMPLES) if use_few_shot_examples else ""
+    system_prompt = (
+        "You are an HR assistant for Zyro Dynamics (also referred to as Acrux Dynamics).\n"
+        "Answer using ONLY the provided context."
+        f"{examples_block}\n\n"
+        "CRITICAL RULES:\n"
+        "- Extract exact numbers, days, months, percentages, amounts, and deadlines from the context.\n"
+        "- When asked about timelines, include every stage and date explicitly present in the context.\n"
+        "- Differentiate clearly between similar leave types, insurance types, policy sections, and eligibility rules.\n"
+        "- Answer only what the user asked, but include every requested policy fact that is supported by the context.\n"
+        "- Do not mention source file names, chunk IDs, or citation markers inside the prose answer.\n"
+        "- The context is sufficient if it contains the policy rules that answer the question.\n"
+        "- If the context lacks information, say exactly: I cannot answer this based on the available HR policy documents.\n"
+        "- Use plain prose, not bullets, tables, or commentary.\n"
+        "- Be concise and accurate."
+    )
+    return ChatPromptTemplate.from_messages(
+        [
+            ("system", system_prompt),
+            ("human", "Context:\n{context}\n\nQuestion: {question}"),
+        ]
+    )
 
 POLICY_SOURCE_ROUTES = [
     (("work from home", "wfh", "hybrid", "full remote", "ad-hoc wfh", "emergency wfh"), "03_Work_From_Home_Policy.pdf"),
@@ -304,6 +321,7 @@ class HRRagConfig:
     collection_name: str = "zyro_hr_policies"
     embedding_provider: str = "auto"
     llm_provider: str = "auto"
+    chunking_strategy: str = "recursive"
     chunk_size: int = 900
     chunk_overlap: int = 150
     retrieval_k: int = 8
@@ -316,13 +334,20 @@ class HRRagConfig:
     min_confidence: float = 0.35
     min_retrieved_chunks: int = 2
     max_chunks_per_source: int = 2
+    reranker_model: str = ""
+    reranker_top_n: int = 0
+    reranker_weight: float = 0.25
     enable_hyde: bool = True
     enable_self_critique: bool = True
     critique_confidence_threshold: float = 0.55
+    use_few_shot_examples: bool = True
     append_source_block: bool = True
     allow_extractive_fallback: bool = True
 
     def __post_init__(self) -> None:
+        self.chunking_strategy = (self.chunking_strategy or "recursive").lower().strip()
+        if self.chunking_strategy not in {"recursive", "semantic"}:
+            self.chunking_strategy = "recursive"
         self.vector_weight = max(0.0, min(1.0, self.vector_weight))
         self.keyword_weight = max(0.0, min(1.0, self.keyword_weight))
         total_weight = self.vector_weight + self.keyword_weight
@@ -335,6 +360,8 @@ class HRRagConfig:
         self.critique_confidence_threshold = max(0.0, min(1.0, self.critique_confidence_threshold))
         self.min_retrieved_chunks = max(1, self.min_retrieved_chunks)
         self.max_chunks_per_source = max(1, self.max_chunks_per_source)
+        self.reranker_top_n = max(0, int(self.reranker_top_n))
+        self.reranker_weight = max(0.0, min(1.0, float(self.reranker_weight)))
 
 
 @dataclass
@@ -521,12 +548,14 @@ class HRRagPipeline:
         vectorstore,
         chunks: Sequence[Document],
         llm=None,
+        reranker=None,
     ) -> None:
         self.config = config
         self.vectorstore = vectorstore
         self.chunks = list(chunks)
         self.keyword_index = KeywordIndex(self.chunks)
         self.llm = llm
+        self.reranker = reranker
 
     @classmethod
     def from_config(cls, config: Optional[HRRagConfig] = None, rebuild: bool = False) -> "HRRagPipeline":
@@ -543,7 +572,7 @@ class HRRagPipeline:
                     "No HR policy documents found. Add .md, .txt, .pdf, .docx, .csv, or .json files to %s."
                     % cfg.docs_path
                 )
-            chunks = split_policy_documents(docs, cfg.chunk_size, cfg.chunk_overlap)
+            chunks = split_policy_documents(docs, cfg.chunk_size, cfg.chunk_overlap, strategy=cfg.chunking_strategy)
             if db_path.exists():
                 shutil.rmtree(db_path)
             vectorstore = build_vectorstore(chunks, embeddings, db_path, cfg.collection_name)
@@ -552,11 +581,12 @@ class HRRagPipeline:
             chunks = load_persisted_chunks(chunks_path)
             if not chunks:
                 docs = load_policy_documents(cfg.docs_path)
-                chunks = split_policy_documents(docs, cfg.chunk_size, cfg.chunk_overlap)
+                chunks = split_policy_documents(docs, cfg.chunk_size, cfg.chunk_overlap, strategy=cfg.chunking_strategy)
             vectorstore = load_vectorstore_or_memory(chunks, embeddings, db_path, cfg.collection_name)
 
         llm = build_chat_model(cfg.llm_provider, cfg.temperature)
-        return cls(cfg, vectorstore, chunks, llm=llm)
+        reranker = build_reranker(cfg.reranker_model)
+        return cls(cfg, vectorstore, chunks, llm=llm, reranker=reranker)
 
     @traceable(
         name="zyro_hr_rag_answer",
@@ -672,8 +702,6 @@ class HRRagPipeline:
                     -item[1],
                 )
             )
-        if source_hints and needs_adjacent_context(question):
-            fused = expand_with_adjacent_policy_chunks(fused, self.chunks, source_hints)
         if source_hints:
             routed = [
                 item
@@ -682,6 +710,16 @@ class HRRagPipeline:
             ]
             if len(routed) >= self.config.min_retrieved_chunks:
                 fused = routed
+        if self.reranker is not None and self.config.reranker_top_n > 0:
+            fused = rerank_fused_results(
+                question=question,
+                fused=fused,
+                reranker=self.reranker,
+                top_n=self.config.reranker_top_n,
+                weight=self.config.reranker_weight,
+            )
+        if source_hints and needs_adjacent_context(question):
+            fused = expand_with_adjacent_policy_chunks(fused, self.chunks, source_hints)
 
         selected: List[Document] = []
         source_counts: Dict[str, int] = defaultdict(int)
@@ -742,12 +780,11 @@ class HRRagPipeline:
         parts = []
         for doc in docs:
             source = doc.metadata.get("source_file", doc.metadata.get("source", "unknown"))
-            chunk_id = doc.metadata.get("chunk_id", "n/a")
             retrieval_rank = doc.metadata.get("retrieval_rank", "n/a")
             text = clean_text(doc.page_content)[: self.config.max_context_chars_per_chunk]
             parts.append(
-                "Relevance rank: %s\nCitation: [%s from %s]\nSource file: %s\nChunk ID: %s\nPolicy text:\n%s"
-                % (retrieval_rank, chunk_id, source, source, chunk_id, text)
+                "Source policy: %s\nRelevance rank: %s\nPolicy text:\n%s"
+                % (source, retrieval_rank, text)
             )
         return "\n\n---\n\n".join(parts)
 
@@ -758,7 +795,7 @@ class HRRagPipeline:
         context: str,
         chat_history: Sequence[Tuple[str, str]],
     ) -> str:
-        prompt = ANSWER_PROMPT_TEMPLATE
+        prompt = build_answer_prompt(self.config.use_few_shot_examples)
 
         if create_stuff_documents_chain is not None:
             document_prompt = PromptTemplate.from_template(
@@ -935,11 +972,115 @@ def load_policy_documents(docs_path: str) -> List[Document]:
                 }
             )
             if clean_text(doc.page_content):
-                docs.append(doc)
+            docs.append(doc)
     return docs
 
 
-def split_policy_documents(docs: Sequence[Document], chunk_size: int, chunk_overlap: int) -> List[Document]:
+SECTION_HEADER_RE = re.compile(r"^[A-Z][A-Z0-9&()/,\- ]{3,}$")
+
+
+def looks_like_section_header(text: str) -> bool:
+    line = clean_text(text)
+    if not line or len(line) > 120:
+        return False
+    if line.endswith(":"):
+        return True
+    if SECTION_HEADER_RE.match(line):
+        return True
+    words = line.split()
+    if len(words) > 8:
+        return False
+    return line == line.title() and not any(ch in line for ch in ".!?")
+
+
+def split_semantic_units(text: str) -> List[str]:
+    normalized = (text or "").replace("\r\n", "\n")
+    if not normalized.strip():
+        return []
+
+    units: List[str] = []
+    current_lines: List[str] = []
+    for raw_line in normalized.split("\n"):
+        line = clean_text(raw_line)
+        if not line:
+            if current_lines:
+                units.append(" ".join(current_lines))
+                current_lines = []
+            continue
+        if looks_like_section_header(line):
+            if current_lines:
+                units.append(" ".join(current_lines))
+                current_lines = []
+            units.append(line)
+            continue
+        current_lines.append(line)
+
+    if current_lines:
+        units.append(" ".join(current_lines))
+
+    if not units:
+        units = [clean_text(sentence) for sentence in split_sentences(normalized)]
+
+    semantic_units: List[str] = []
+    for unit in units:
+        if len(unit) <= 320:
+            semantic_units.append(unit)
+            continue
+        sentences = list(split_sentences(unit))
+        semantic_units.extend(sentences or [unit])
+    return [unit for unit in semantic_units if unit]
+
+
+def merge_semantic_units(units: Sequence[str], chunk_size: int, chunk_overlap: int) -> List[str]:
+    if not units:
+        return []
+
+    chunks: List[str] = []
+    current: List[str] = []
+    current_len = 0
+    for unit in units:
+        pending_len = current_len + (1 if current else 0) + len(unit)
+        if current and pending_len > chunk_size:
+            chunks.append(" ".join(current))
+            overlap_units: List[str] = []
+            overlap_len = 0
+            for previous in reversed(current):
+                previous_len = len(previous) + (1 if overlap_units else 0)
+                if overlap_units and overlap_len + previous_len > chunk_overlap:
+                    break
+                overlap_units.insert(0, previous)
+                overlap_len += previous_len
+            current = overlap_units
+            current_len = len(" ".join(current))
+        current.append(unit)
+        current_len = len(" ".join(current))
+    if current:
+        chunks.append(" ".join(current))
+    return chunks
+
+
+def split_policy_documents(
+    docs: Sequence[Document],
+    chunk_size: int,
+    chunk_overlap: int,
+    strategy: str = "recursive",
+) -> List[Document]:
+    selected_strategy = (strategy or "recursive").lower().strip()
+    if selected_strategy == "semantic":
+        chunks: List[Document] = []
+        for doc in docs:
+            units = split_semantic_units(doc.page_content)
+            merged = merge_semantic_units(units, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+            if not merged:
+                merged = [clean_text(doc.page_content)]
+            for text in merged:
+                chunks.append(Document(page_content=text, metadata={**doc.metadata}))
+        for idx, chunk in enumerate(chunks):
+            chunk.metadata["chunk_id"] = idx
+            chunk.metadata["chunk_chars"] = len(chunk.page_content)
+            chunk.metadata["chunking_strategy"] = "semantic"
+        return chunks
+
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap,
@@ -950,6 +1091,7 @@ def split_policy_documents(docs: Sequence[Document], chunk_size: int, chunk_over
     for idx, chunk in enumerate(chunks):
         chunk.metadata["chunk_id"] = idx
         chunk.metadata["chunk_chars"] = len(chunk.page_content)
+        chunk.metadata["chunking_strategy"] = "recursive"
     return chunks
 
 
@@ -1045,6 +1187,25 @@ def build_memory_vectorstore_with_fallback(
         return InMemoryVectorStore.from_documents(chunks, hash_embeddings)
 
 
+_RERANKER_CACHE: Dict[str, object] = {}
+
+
+def build_reranker(model_name: str = ""):
+    selected = (model_name or os.getenv("RERANKER_MODEL", "")).strip()
+    if not selected:
+        return None
+    cached = _RERANKER_CACHE.get(selected)
+    if cached is not None:
+        return cached
+    try:
+        from sentence_transformers import CrossEncoder
+    except Exception:
+        return None
+    reranker = CrossEncoder(selected)
+    _RERANKER_CACHE[selected] = reranker
+    return reranker
+
+
 def build_chat_model(provider: str = "auto", temperature: float = 0.0):
     selected = (provider or "auto").lower()
     env_provider = os.getenv("LLM_PROVIDER", "").lower()
@@ -1055,6 +1216,10 @@ def build_chat_model(provider: str = "auto", temperature: float = 0.0):
             selected = "groq"
         elif os.getenv("OPENAI_API_KEY"):
             selected = "openai"
+        elif os.getenv("ANTHROPIC_API_KEY"):
+            selected = "anthropic"
+        elif os.getenv("GOOGLE_API_KEY"):
+            selected = "google"
         elif os.getenv("OLLAMA_LLM_MODEL"):
             selected = "ollama"
         else:
@@ -1080,6 +1245,22 @@ def build_chat_model(provider: str = "auto", temperature: float = 0.0):
             max_tokens=int(os.getenv("OPENAI_MAX_TOKENS", "500")),
             timeout=float(os.getenv("OPENAI_REQUEST_TIMEOUT", "90")),
             max_retries=int(os.getenv("OPENAI_MAX_RETRIES", "0")),
+        )
+    if selected == "anthropic":
+        from langchain_anthropic import ChatAnthropic
+
+        return ChatAnthropic(
+            model=os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet-latest"),
+            temperature=temperature,
+            timeout=float(os.getenv("ANTHROPIC_REQUEST_TIMEOUT", "90")),
+            max_retries=int(os.getenv("ANTHROPIC_MAX_RETRIES", "0")),
+        )
+    if selected == "google":
+        from langchain_google_genai import ChatGoogleGenerativeAI
+
+        return ChatGoogleGenerativeAI(
+            model=os.getenv("GOOGLE_MODEL", "gemini-1.5-pro"),
+            temperature=temperature,
         )
     if selected == "ollama":
         from langchain_ollama import ChatOllama
@@ -1316,6 +1497,55 @@ def weighted_reciprocal_rank_fusion(
         )
         for entry in ranked
     ]
+
+
+def rerank_fused_results(
+    question: str,
+    fused: Sequence[Tuple[Document, float, float, List[str]]],
+    reranker,
+    top_n: int = 20,
+    weight: float = 0.25,
+) -> List[Tuple[Document, float, float, List[str]]]:
+    if reranker is None or not fused:
+        return list(fused)
+
+    top_n = max(1, min(len(fused), int(top_n)))
+    reranked = list(fused[:top_n])
+    remainder = list(fused[top_n:])
+    try:
+        pairs = [
+            [normalize_company_aliases(question), clean_text(doc.page_content)]
+            for doc, _score, _confidence, _methods in reranked
+        ]
+        raw_scores = list(reranker.predict(pairs))
+    except Exception:
+        return list(fused)
+
+    minimum = min(raw_scores)
+    maximum = max(raw_scores)
+    if maximum == minimum:
+        normalized_scores = [1.0 for _ in raw_scores]
+    else:
+        normalized_scores = [(score - minimum) / (maximum - minimum) for score in raw_scores]
+
+    blended: List[Tuple[Document, float, float, List[str]]] = []
+    for (doc, score, confidence, methods), rerank_score in zip(reranked, normalized_scores):
+        combined_confidence = ((1.0 - weight) * confidence) + (weight * rerank_score)
+        combined_score = score + rerank_score
+        method_list = list(methods)
+        if "cross_encoder" not in method_list:
+            method_list.append("cross_encoder")
+        blended.append((doc, combined_score, round(combined_confidence, 4), method_list))
+
+    blended.sort(
+        key=lambda item: (
+            item[2],
+            item[1],
+            query_doc_overlap(question, item[0]),
+        ),
+        reverse=True,
+    )
+    return blended + remainder
 
 
 def is_vague_query(question: str) -> bool:
