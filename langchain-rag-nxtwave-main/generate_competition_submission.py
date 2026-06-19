@@ -103,12 +103,13 @@ def parse_args() -> argparse.Namespace:
         choices=["auto", "openai", "ollama", "huggingface", "hash"],
     )
     parser.add_argument("--llm-provider", default="auto", choices=["auto", "groq", "openai", "ollama", "extractive"])
-    parser.add_argument("--chunk-size", type=int, default=1000)
-    parser.add_argument("--chunk-overlap", type=int, default=200)
-    parser.add_argument("--retrieval-k", type=int, default=6, help="Number of policy chunks supplied to the answer LLM.")
-    parser.add_argument("--fetch-k", type=int, default=48)
+    parser.add_argument("--chunk-size", type=int, default=900)
+    parser.add_argument("--chunk-overlap", type=int, default=150)
+    parser.add_argument("--retrieval-k", type=int, default=8, help="Number of policy chunks supplied to the answer LLM.")
+    parser.add_argument("--fetch-k", type=int, default=60)
     parser.add_argument("--vector-weight", type=float, default=0.65)
     parser.add_argument("--keyword-weight", type=float, default=None, help="BM25 weight. Defaults to 1 - vector_weight.")
+    parser.add_argument("--max-chunks-per-source", type=int, default=2)
     parser.add_argument("--critique-threshold", type=float, default=0.55)
     parser.add_argument("--delay", type=float, default=5.0, help="Seconds between questions to reduce rate-limit risk.")
     parser.add_argument("--max-retries", type=int, default=4, help="Maximum model attempts per in-scope question.")
@@ -485,6 +486,7 @@ def main() -> None:
         fetch_k=max(args.fetch_k, args.retrieval_k),
         vector_weight=args.vector_weight,
         keyword_weight=args.keyword_weight if args.keyword_weight is not None else 1.0 - args.vector_weight,
+        max_chunks_per_source=args.max_chunks_per_source,
         enable_hyde=False,
         enable_self_critique=not args.disable_self_critique,
         critique_confidence_threshold=args.critique_threshold,

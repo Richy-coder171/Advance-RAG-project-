@@ -304,10 +304,10 @@ class HRRagConfig:
     collection_name: str = "zyro_hr_policies"
     embedding_provider: str = "auto"
     llm_provider: str = "auto"
-    chunk_size: int = 1000
-    chunk_overlap: int = 200
-    retrieval_k: int = 6
-    fetch_k: int = 48
+    chunk_size: int = 900
+    chunk_overlap: int = 150
+    retrieval_k: int = 8
+    fetch_k: int = 60
     temperature: float = 0.0
     max_context_chars_per_chunk: int = 1800
     vector_weight: float = 0.65
