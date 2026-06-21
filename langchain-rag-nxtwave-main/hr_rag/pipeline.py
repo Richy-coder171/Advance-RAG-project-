@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import math
 import os
@@ -63,7 +64,21 @@ def load_environment() -> None:
             continue
         seen.add(path)
         if path.exists():
-            load_dotenv(path, override=False)
+            loaded = False
+            raw = path.read_bytes()
+            for encoding in ("utf-8", "utf-8-sig", "utf-16", "utf-16-le", "utf-16-be", "cp1252", "latin-1"):
+                try:
+                    text = raw.decode(encoding)
+                except UnicodeDecodeError:
+                    continue
+                load_dotenv(stream=io.StringIO(text), override=False)
+                loaded = True
+                break
+            if not loaded:
+                try:
+                    load_dotenv(path, override=False)
+                except Exception:
+                    pass
 
     # LangSmith has used both env names across LangChain versions.
     if os.getenv("LANGCHAIN_API_KEY") and not os.getenv("LANGSMITH_API_KEY"):
