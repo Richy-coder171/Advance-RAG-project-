@@ -237,3 +237,7 @@ Tune against a small validation set before submitting:
 - Keep guardrails strict for non-HR, sensitive personal data, credentials, and unsupported questions.
 
 The production path for this assignment is the official-corpus HR pipeline: `streamlit_hr_helpdesk.py`, `hr_rag/`, `generate_competition_submission.py`, and `hr_docs/official/`.
+
+
+
+there are the no improvement happpen after 93.67
